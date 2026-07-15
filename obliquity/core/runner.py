@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from sqlite3 import Connection, Row
 
@@ -13,6 +14,8 @@ from obliquity.core.database import (
     mark_run_started,
 )
 from obliquity.core.gameplan import Gameplan, fingerprint_stage
+
+EventCallback = Callable[[dict], None]
 
 
 def safe_name(value: str) -> str:
@@ -42,9 +45,15 @@ def preview_plan(url: str, gameplan: Gameplan) -> list[dict]:
                 "recursion": stage.recursion,
                 "depth": stage.depth,
                 "status_codes": stage.status_codes,
+                "extra_args": stage.extra_args,
+                "estimated_minutes": stage.estimated_minutes,
             }
         )
     return rows
+
+
+def quoted_command(cmd: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in cmd)
 
 
 def run_gameplan(
@@ -59,17 +68,28 @@ def run_gameplan(
     threads: int | None = None,
     proxy: str | None = None,
     headers: list[str] | None = None,
+    event_callback: EventCallback | None = None,
 ) -> list[dict]:
     if not dry_run:
         require_feroxbuster()
     results: list[dict] = []
     url = host["url"]
+    total_stages = len(gameplan.stages)
 
-    for stage in gameplan.stages:
+    for idx, stage in enumerate(gameplan.stages, start=1):
         fingerprint = fingerprint_stage(url, gameplan, stage)
         existing = get_run_by_fingerprint(conn, fingerprint)
         if existing and existing["status"] == "completed" and not force:
-            results.append({"stage": stage.name, "action": "skipped", "reason": "already completed"})
+            item = {
+                "stage": stage.name,
+                "stage_number": idx,
+                "total_stages": total_stages,
+                "action": "skipped",
+                "reason": "already completed",
+            }
+            if event_callback:
+                event_callback(item)
+            results.append(item)
             continue
 
         raw_output, json_output = stage_paths(project, host, gameplan, stage.name)
@@ -82,6 +102,7 @@ def run_gameplan(
             proxy=proxy,
             headers=headers,
         )
+        command = quoted_command(cmd)
         run = create_or_update_run(
             conn,
             project["id"],
@@ -89,14 +110,35 @@ def run_gameplan(
             gameplan.name,
             stage.name,
             fingerprint,
-            " ".join(shlex.quote(part) for part in cmd),
+            command,
             str(raw_output),
             str(json_output),
         )
 
+        common = {
+            "stage": stage.name,
+            "stage_number": idx,
+            "total_stages": total_stages,
+            "wordlist": stage.wordlist,
+            "extensions": stage.extensions,
+            "recursion": stage.recursion,
+            "depth": stage.depth,
+            "status_codes": stage.status_codes,
+            "estimated_minutes": stage.estimated_minutes,
+            "command": command,
+            "json_output": str(json_output),
+            "raw_output": str(raw_output),
+        }
+
         if dry_run:
-            results.append({"stage": stage.name, "action": "planned", "command": run["command"]})
+            item = {**common, "action": "planned"}
+            if event_callback:
+                event_callback(item)
+            results.append(item)
             continue
+
+        if event_callback:
+            event_callback({**common, "action": "starting"})
 
         mark_run_started(conn, run["id"])
         exit_code, error = run_command(cmd, raw_output)
@@ -111,18 +153,17 @@ def run_gameplan(
             source=stage.name,
         )
         inserted = insert_findings(conn, findings)
-        results.append(
-            {
-                "stage": stage.name,
-                "action": "ran",
-                "status": status,
-                "exit_code": exit_code,
-                "new_findings": inserted,
-                "json_output": str(json_output),
-                "raw_output": str(raw_output),
-                "error": error,
-            }
-        )
+        item = {
+            **common,
+            "action": "ran",
+            "status": status,
+            "exit_code": exit_code,
+            "new_findings": inserted,
+            "error": error,
+        }
+        if event_callback:
+            event_callback(item)
+        results.append(item)
         if exit_code != 0:
             break
 

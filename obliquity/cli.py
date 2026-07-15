@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from obliquity.core.console import blank, bullet, c, command_block, kv, rainbow_text, section, subsection
 from obliquity.core.database import (
     add_host,
     connect,
@@ -16,7 +17,7 @@ from obliquity.core.database import (
     get_runs,
     list_hosts,
 )
-from obliquity.core.gameplan import find_builtin_gameplan, load_gameplan
+from obliquity.core.gameplan import find_builtin_gameplan, list_builtin_gameplans, load_gameplan
 from obliquity.core.reporting import generate_html
 from obliquity.core.runner import preview_plan, run_gameplan
 
@@ -24,9 +25,22 @@ APP_DIR = Path(os.environ.get("OBLIQUITY_HOME", Path.home() / ".obliquity"))
 DB_PATH = APP_DIR / "obliquity.db"
 PROJECTS_DIR = APP_DIR / "projects"
 
+BANNER = r"""
+      ___.   .__  .__             .__  __
+  ____\_ |__ |  | |__| ________ __|__|/  |_ ___.__.
+ /  _ \| __ \|  | |  |/ ____/  |  \  \   __<   |  |
+(  <_> ) \_\ \  |_|  < <_|  |  |  /  ||  |  \___  |
+ \____/|___  /____/__/\__   |____/|__||__|  / ____|
+           \/            |__|               \/
+"""
+
+
+def print_banner() -> None:
+    print(rainbow_text(BANNER))
+
 
 def die(msg: str, code: int = 1) -> None:
-    print(f"error: {msg}", file=sys.stderr)
+    print(c(f"error: {msg}", "red", bold=True), file=sys.stderr)
     raise SystemExit(code)
 
 
@@ -44,30 +58,169 @@ def require_project(conn, name: str):
     return project
 
 
+def fmt_list(values: list[str] | list[int] | tuple | None, empty: str = "none") -> str:
+    if not values:
+        return empty
+    return ", ".join(str(x) for x in values)
+
+
+def fmt_recursion(enabled: bool, depth: int | None) -> str:
+    if not enabled:
+        return "no"
+    return f"yes, depth={depth}" if depth is not None else "yes"
+
+
+def fmt_estimate(minutes: int | None) -> str:
+    if minutes is None:
+        return "unknown"
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes / 60
+    return f"{hours:.1f} hr"
+
+
+def total_estimate(gameplan) -> str:
+    estimates = [stage.estimated_minutes for stage in gameplan.stages]
+    if not estimates or any(value is None for value in estimates):
+        return "unknown in MVP; stage estimates can be added to the gameplan JSON later"
+    return fmt_estimate(sum(value or 0 for value in estimates))
+
+
+def print_stage_summary(row: dict) -> None:
+    subsection(f"Stage {row['number']}: {row['name']}", "magenta")
+    bullet("Wordlist", row["wordlist"])
+    bullet("Extensions", fmt_list(row["extensions"]))
+    bullet("Recursion", fmt_recursion(row["recursion"], row["depth"]))
+    bullet("Status codes", fmt_list(row["status_codes"]))
+    bullet("Estimated time", fmt_estimate(row.get("estimated_minutes")))
+    if row.get("extra_args"):
+        bullet("Extra args", fmt_list(row["extra_args"]))
+
+
+def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, args) -> None:
+    section(f"Obliquity Bust: {mode}", "cyan")
+    kv("Project", project["name"])
+    kv("Target", host["url"])
+    kv("Selected gameplan", gameplan.name)
+    if gameplan.description:
+        kv("Description", gameplan.description)
+    kv("Stages", len(gameplan.stages))
+    kv("Estimated completion", total_estimate(gameplan))
+    kv("Output root", Path(project["root_dir"]) / "runs")
+
+    option_bits = []
+    if getattr(args, "proxy", None):
+        option_bits.append(f"proxy={args.proxy}")
+    if getattr(args, "threads", None):
+        option_bits.append(f"threads={args.threads}")
+    if getattr(args, "rate_limit", None):
+        option_bits.append(f"rate-limit={args.rate_limit}")
+    if getattr(args, "header", None):
+        option_bits.append(f"headers={len(args.header)}")
+    if getattr(args, "force", False):
+        option_bits.append("force-rerun=true")
+    kv("Run options", ", ".join(option_bits) if option_bits else "default")
+
+    section("Stages queued", "blue")
+    for row in preview_plan(host["url"], gameplan):
+        print_stage_summary(row)
+
+
+def print_run_event(event: dict) -> None:
+    action = event.get("action")
+    stage_label = f"Stage {event.get('stage_number')}/{event.get('total_stages')}: {event.get('stage')}"
+
+    if action == "skipped":
+        subsection(f"Skipped {stage_label}", "yellow")
+        bullet("Reason", event.get("reason", "already completed"), color="yellow")
+        return
+
+    if action == "planned":
+        subsection(f"Planned {stage_label}", "magenta")
+        bullet("Wordlist", event.get("wordlist"))
+        bullet("Extensions", fmt_list(event.get("extensions")))
+        bullet("Recursion", fmt_recursion(bool(event.get("recursion")), event.get("depth")))
+        bullet("JSON output", event.get("json_output"))
+        command_block(event.get("command", ""))
+        return
+
+    if action == "starting":
+        subsection(f"Running {stage_label}", "green")
+        bullet("Wordlist", event.get("wordlist"))
+        bullet("Extensions", fmt_list(event.get("extensions")))
+        bullet("Recursion", fmt_recursion(bool(event.get("recursion")), event.get("depth")))
+        bullet("Raw output", event.get("raw_output"))
+        bullet("JSON output", event.get("json_output"))
+        command_block(event.get("command", ""))
+        print(c("This stage is running now. Output is being written to the files above.", "gray"))
+        return
+
+    if action == "ran":
+        status = event.get("status", "unknown")
+        color = "green" if status == "completed" else "red"
+        subsection(f"Finished {stage_label}", color)
+        bullet("Status", status, color=color)
+        bullet("Exit code", event.get("exit_code"), color=color)
+        bullet("New findings", event.get("new_findings"), color=color)
+        bullet("Raw output", event.get("raw_output"))
+        bullet("JSON output", event.get("json_output"))
+        if event.get("error"):
+            bullet("Error", event["error"], color="red")
+        return
+
+
 def cmd_project_create(args) -> None:
     conn = connect(DB_PATH)
     root = PROJECTS_DIR / args.name
     project = create_project(conn, args.name, root)
-    print(f"Created project: {project['name']}")
-    print(f"Root: {project['root_dir']}")
+    section("Project created", "green")
+    kv("Name", project["name"])
+    kv("Root", project["root_dir"])
 
 
 def cmd_host_add(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
     host = add_host(conn, project["id"], args.url, args.profile, args.server, args.tech, args.notes)
-    print(f"Added host: {host['url']} ({host['profile']})")
+    section("Host added", "green")
+    kv("Project", project["name"])
+    kv("URL", host["url"])
+    kv("Profile", host["profile"])
+    kv("Server", host["server"] or "-")
+    kv("Tech", host["tech"] or "-")
 
 
 def cmd_host_list(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
     hosts = list_hosts(conn, project["id"])
+    section(f"Hosts: {project['name']}", "cyan")
     if not hosts:
         print("No hosts added yet.")
         return
     for host in hosts:
-        print(f"{host['url']}  profile={host['profile']}  server={host['server'] or '-'}  tech={host['tech'] or '-'}")
+        subsection(host["url"], "magenta")
+        bullet("Profile", host["profile"])
+        bullet("Server", host["server"] or "-")
+        bullet("Tech", host["tech"] or "-")
+
+
+def cmd_gameplans_list(args) -> None:
+    section("Available gameplans", "cyan")
+    for path in list_builtin_gameplans():
+        gameplan = load_gameplan(path)
+        subsection(gameplan.name, "magenta")
+        if gameplan.description:
+            bullet("Description", gameplan.description)
+        bullet("Stages", len(gameplan.stages))
+        bullet("Estimated completion", total_estimate(gameplan))
+        if not args.brief:
+            for row in preview_plan("https://example.local", gameplan):
+                print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
+                print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
+                print(f"     {c('Extensions:', 'cyan', bold=True)} {fmt_list(row['extensions'])}")
+                print(f"     {c('Recursion:', 'cyan', bold=True)} {fmt_recursion(row['recursion'], row['depth'])}")
+            blank()
 
 
 def cmd_bust_plan(args) -> None:
@@ -77,19 +230,7 @@ def cmd_bust_plan(args) -> None:
     if host is None:
         die(f"host not found in project: {args.url}")
     gameplan = resolve_gameplan(args.gameplan)
-    print(f"Gameplan: {gameplan.name}")
-    if gameplan.description:
-        print(f"Description: {gameplan.description}")
-    print(f"Target: {host['url']}")
-    print()
-    for row in preview_plan(host["url"], gameplan):
-        ext = ",".join(row["extensions"]) if row["extensions"] else "none"
-        recurse = f"yes depth={row['depth']}" if row["recursion"] else "no"
-        print(f"{row['number']}. {row['name']}")
-        print(f"   wordlist: {row['wordlist']}")
-        print(f"   extensions: {ext}")
-        print(f"   recursion: {recurse}")
-        print(f"   status codes: {','.join(str(x) for x in row['status_codes'])}")
+    print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args)
 
 
 def cmd_bust_run(args) -> None:
@@ -99,6 +240,11 @@ def cmd_bust_run(args) -> None:
     if host is None:
         die(f"host not found in project: {args.url}. Add it first with: obliquity host add")
     gameplan = resolve_gameplan(args.gameplan)
+
+    mode = "Dry Run" if args.dry_run else "Run"
+    print_gameplan_summary(project, host, gameplan, mode=mode, args=args)
+
+    section("Execution", "cyan")
     results = run_gameplan(
         conn,
         project,
@@ -110,16 +256,22 @@ def cmd_bust_run(args) -> None:
         threads=args.threads,
         proxy=args.proxy,
         headers=args.header or [],
+        event_callback=print_run_event,
     )
-    for item in results:
-        if item["action"] == "skipped":
-            print(f"SKIP {item['stage']}: {item['reason']}")
-        elif item["action"] == "planned":
-            print(f"PLAN {item['stage']}: {item['command']}")
-        else:
-            print(f"{item['status'].upper()} {item['stage']}: new findings={item['new_findings']} exit={item['exit_code']}")
-            if item.get("error"):
-                print(f"  {item['error']}")
+
+    completed = sum(1 for item in results if item.get("status") == "completed")
+    skipped = sum(1 for item in results if item.get("action") == "skipped")
+    planned = sum(1 for item in results if item.get("action") == "planned")
+    failed = sum(1 for item in results if item.get("status") == "failed")
+    findings = sum(int(item.get("new_findings") or 0) for item in results)
+
+    section("Run summary", "green" if failed == 0 else "red")
+    kv("Completed stages", completed, color="green")
+    kv("Skipped stages", skipped, color="yellow")
+    kv("Planned stages", planned, color="magenta")
+    kv("Failed stages", failed, color="red" if failed else "green")
+    kv("New findings", findings)
+    kv("Report command", f"obliquity report html {project['name']}")
 
 
 def cmd_bust_resume(args) -> None:
@@ -134,20 +286,37 @@ def cmd_report_html(args) -> None:
     findings = get_findings(conn, project["id"])
     output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.html"
     generate_html(project, runs, findings, output)
-    print(f"Report written: {output}")
+    section("HTML report", "green")
+    kv("Report written", output)
 
 
 def cmd_runs(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
     runs = get_runs(conn, project["id"], args.status)
+    section(f"Runs: {project['name']}", "cyan")
+    if not runs:
+        print("No runs found.")
+        return
     for run in runs:
-        print(f"{run['id']:>4} {run['status']:<10} {run['stage_name']:<24} {run['gameplan_name']} exit={run['exit_code']}")
+        status_color = "green" if run["status"] == "completed" else "red" if run["status"] == "failed" else "yellow"
+        print(
+            f"{c(str(run['id']).rjust(4), 'gray')} "
+            f"{c(run['status'].ljust(10), status_color, bold=True)} "
+            f"{c(run['stage_name'].ljust(24), 'magenta')} "
+            f"{run['gameplan_name']} exit={run['exit_code']}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="obliquity", description="Obliquity Bust MVP: staged feroxbuster orchestration")
+    p = argparse.ArgumentParser(prog="obliquity", description="Obliquity: staged pentest workflow orchestration")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    gameplans = sub.add_parser("gameplans")
+    gameplans_sub = gameplans.add_subparsers(dest="gameplans_cmd", required=True)
+    gl = gameplans_sub.add_parser("list")
+    gl.add_argument("--brief", action="store_true", help="show only names and summary fields")
+    gl.set_defaults(func=cmd_gameplans_list)
 
     project = sub.add_parser("project")
     project_sub = project.add_subparsers(dest="project_cmd", required=True)
@@ -184,11 +353,11 @@ def build_parser() -> argparse.ArgumentParser:
     br.add_argument("url")
     br.add_argument("--gameplan", default="generic-quick")
     br.add_argument("--force", action="store_true", help="rerun completed stages")
-    br.add_argument("--dry-run", action="store_true", help="print commands without running feroxbuster")
+    br.add_argument("--dry-run", action="store_true", help="print commands without running the underlying tool")
     br.add_argument("--rate-limit", type=int)
     br.add_argument("--threads", type=int)
     br.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
-    br.add_argument("--header", action="append", help="header passed to feroxbuster; repeatable")
+    br.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
     br.set_defaults(func=cmd_bust_run)
 
     bres = bust_sub.add_parser("resume")
@@ -219,6 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    print_banner()
     args = build_parser().parse_args(argv)
     args.func(args)
 

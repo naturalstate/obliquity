@@ -17,6 +17,7 @@ class Stage:
     status_codes: list[int] = field(default_factory=lambda: [200, 204, 301, 302, 307, 308, 401, 403])
     collect_extensions: bool = False
     extra_args: list[str] = field(default_factory=list)
+    estimated_minutes: int | None = None
 
 
 @dataclass
@@ -54,9 +55,16 @@ def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def profiles_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "profiles"
+
+
 def find_builtin_gameplan(name: str) -> Path:
-    here = Path(__file__).resolve().parents[1]
-    candidate = here / "profiles" / f"{name}.json"
+    candidate = profiles_dir() / f"{name}.json"
     if not candidate.exists():
         raise FileNotFoundError(f"Unknown gameplan '{name}'. Expected {candidate}")
     return candidate
+
+
+def list_builtin_gameplans() -> list[Path]:
+    return sorted(profiles_dir().glob("*.json"))
