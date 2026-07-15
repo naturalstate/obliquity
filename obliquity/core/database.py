@@ -119,6 +119,45 @@ def list_hosts(conn: sqlite3.Connection, project_id: int) -> list[sqlite3.Row]:
     return list(conn.execute("SELECT * FROM hosts WHERE project_id = ? ORDER BY url", (project_id,)))
 
 
+def update_host(
+    conn: sqlite3.Connection,
+    project_id: int,
+    url: str,
+    *,
+    new_url: str | None = None,
+    profile: str | None = None,
+    server: str | None = None,
+    tech: str | None = None,
+    notes: str | None = None,
+) -> Optional[sqlite3.Row]:
+    host = get_host(conn, project_id, url)
+    if host is None:
+        return None
+
+    final_url = new_url if new_url is not None else host["url"]
+    final_profile = profile if profile is not None else host["profile"]
+    final_server = server if server is not None else host["server"]
+    final_tech = tech if tech is not None else host["tech"]
+    final_notes = notes if notes is not None else host["notes"]
+
+    conn.execute(
+        """
+        UPDATE hosts
+        SET url = ?, profile = ?, server = ?, tech = ?, notes = ?
+        WHERE project_id = ? AND url = ?
+        """,
+        (final_url, final_profile, final_server, final_tech, final_notes, project_id, url),
+    )
+    conn.commit()
+    return get_host(conn, project_id, final_url)
+
+
+def delete_host(conn: sqlite3.Connection, project_id: int, url: str) -> bool:
+    cur = conn.execute("DELETE FROM hosts WHERE project_id = ? AND url = ?", (project_id, url))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def get_host(conn: sqlite3.Connection, project_id: int, url: str) -> Optional[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM hosts WHERE project_id = ? AND url = ?", (project_id, url)

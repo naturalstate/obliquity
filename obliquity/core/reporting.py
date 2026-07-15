@@ -6,6 +6,16 @@ from pathlib import Path
 from sqlite3 import Row
 
 
+REPORT_BANNER = r"""
+      ___.   .__  .__             .__  __
+  ____\_ |__ |  | |__| ________ __|__|/  |_ ___.__.
+ /  _ \| __ \|  | |  |/ ____/  |  \  \   __<   |  |
+(  <_> ) \_\ \  |_|  < <_|  |  |  /  ||  |  \___  |
+ \____/|___  /____/__/\__   |____/|__||__|  / ____|
+           \/            |__|               \/
+"""
+
+
 def _esc(value) -> str:
     if value is None:
         return ""
@@ -81,6 +91,20 @@ def generate_html(project: Row, runs: list[Row], findings: list[Row], output_pat
     :root {{ --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --accent:#2dd4bf; --link:#58a6ff; }}
     body {{ margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }}
     header {{ padding:28px 36px; border-bottom:1px solid var(--border); }}
+    .banner {{
+      display:inline-block;
+      margin:0 0 18px 0;
+      font-family:"SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size:13px;
+      line-height:1.05;
+      white-space:pre;
+      letter-spacing:0;
+      background:linear-gradient(90deg,#ff004c,#ff7a00,#ffe600,#00e676,#00c2ff,#7c4dff,#ff00d4);
+      -webkit-background-clip:text;
+      background-clip:text;
+      color:transparent;
+      font-weight:700;
+    }}
     h1 {{ margin:0 0 6px 0; font-size:28px; }}
     h2 {{ margin-top:32px; }}
     .muted {{ color:var(--muted); }}
@@ -100,6 +124,7 @@ def generate_html(project: Row, runs: list[Row], findings: list[Row], output_pat
 </head>
 <body>
 <header>
+  <pre class="banner">{_esc(REPORT_BANNER)}</pre>
   <h1>Obliquity Bust Report</h1>
   <div class="muted">Project: {_esc(project['name'])}</div>
 </header>

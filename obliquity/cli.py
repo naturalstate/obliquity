@@ -11,11 +11,13 @@ from obliquity.core.database import (
     add_host,
     connect,
     create_project,
+    delete_host,
     get_findings,
     get_host,
     get_project,
     get_runs,
     list_hosts,
+    update_host,
 )
 from obliquity.core.gameplan import find_builtin_gameplan, list_builtin_gameplans, load_gameplan
 from obliquity.core.reporting import generate_html
@@ -203,6 +205,52 @@ def cmd_host_list(args) -> None:
         bullet("Profile", host["profile"])
         bullet("Server", host["server"] or "-")
         bullet("Tech", host["tech"] or "-")
+        if host["notes"]:
+            bullet("Notes", host["notes"])
+
+
+def cmd_host_update(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    if not any([args.url_new, args.profile, args.server is not None, args.tech is not None, args.notes is not None]):
+        die("nothing to update. Use --url-new, --profile, --server, --tech, or --notes")
+    host = update_host(
+        conn,
+        project["id"],
+        args.url,
+        new_url=args.url_new,
+        profile=args.profile,
+        server=args.server,
+        tech=args.tech,
+        notes=args.notes,
+    )
+    if host is None:
+        die(f"host not found in project: {args.url}")
+    section("Host updated", "green")
+    kv("Project", project["name"])
+    kv("URL", host["url"])
+    kv("Profile", host["profile"])
+    kv("Server", host["server"] or "-")
+    kv("Tech", host["tech"] or "-")
+    kv("Notes", host["notes"] or "-")
+
+
+def cmd_host_remove(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    if not args.yes:
+        section("Confirm host removal", "yellow")
+        kv("Project", project["name"], color="yellow")
+        kv("URL", args.url, color="yellow")
+        print(c("This will remove the host and related run/finding records from the database.", "yellow"))
+        print(c("Re-run with --yes to confirm.", "yellow", bold=True))
+        return
+    removed = delete_host(conn, project["id"], args.url)
+    if not removed:
+        die(f"host not found in project: {args.url}")
+    section("Host removed", "green")
+    kv("Project", project["name"])
+    kv("URL", args.url)
 
 
 def cmd_gameplans_list(args) -> None:
@@ -338,6 +386,22 @@ def build_parser() -> argparse.ArgumentParser:
     hl = host_sub.add_parser("list")
     hl.add_argument("project")
     hl.set_defaults(func=cmd_host_list)
+
+    hu = host_sub.add_parser("update")
+    hu.add_argument("project")
+    hu.add_argument("url")
+    hu.add_argument("--url-new", help="new URL for this host")
+    hu.add_argument("--profile")
+    hu.add_argument("--server")
+    hu.add_argument("--tech")
+    hu.add_argument("--notes")
+    hu.set_defaults(func=cmd_host_update)
+
+    hr = host_sub.add_parser("remove")
+    hr.add_argument("project")
+    hr.add_argument("url")
+    hr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
+    hr.set_defaults(func=cmd_host_remove)
 
     bust = sub.add_parser("bust")
     bust_sub = bust.add_subparsers(dest="bust_cmd", required=True)
