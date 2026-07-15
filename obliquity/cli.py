@@ -6,7 +6,18 @@ import os
 import sys
 from pathlib import Path
 
-from obliquity.core.console import blank, bullet, c, command_block, kv, rainbow_text, section, subsection
+from obliquity.core.console import (
+    blank,
+    bullet,
+    c,
+    command_block,
+    kv,
+    live_progress_line,
+    rainbow_text,
+    section,
+    subsection,
+    supports_color,
+)
 from obliquity.core.database import (
     add_host,
     connect,
@@ -157,9 +168,16 @@ def print_run_event(event: dict) -> None:
         print(c("This stage is running now. Output is being written to the files above.", "gray"))
         return
 
+    if action == "progress":
+        if supports_color():
+            print(f"\r{live_progress_line(event)}", end="", flush=True)
+        return
+
     if action == "ran":
+        if supports_color():
+            print("\r" + " " * 120 + "\r", end="", flush=True)
         status = event.get("status", "unknown")
-        color = "green" if status == "completed" else "red"
+        color = "green" if status == "completed" else "yellow" if status == "interrupted" else "red"
         subsection(f"Finished {stage_label}", color)
         bullet("Status", status, color=color)
         bullet("Exit code", event.get("exit_code"), color=color)
@@ -311,6 +329,7 @@ def cmd_bust_run(args) -> None:
     skipped = sum(1 for item in results if item.get("action") == "skipped")
     planned = sum(1 for item in results if item.get("action") == "planned")
     failed = sum(1 for item in results if item.get("status") == "failed")
+    interrupted = sum(1 for item in results if item.get("status") == "interrupted")
     findings = sum(int(item.get("new_findings") or 0) for item in results)
 
     section("Run summary", "green" if failed == 0 else "red")
@@ -318,6 +337,7 @@ def cmd_bust_run(args) -> None:
     kv("Skipped stages", skipped, color="yellow")
     kv("Planned stages", planned, color="magenta")
     kv("Failed stages", failed, color="red" if failed else "green")
+    kv("Interrupted stages", interrupted, color="yellow" if interrupted else "green")
     kv("New findings", findings)
     kv("Report command", f"obliquity report html {project['name']}")
 

@@ -95,3 +95,35 @@ def command_block(command: str) -> None:
     print(c("Command:", "yellow", bold=True))
     print(command)
     print()
+
+
+SPINNER = "|/-\\"
+
+
+def elapsed_time(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def progress_bar(percent: int, width: int = 20) -> str:
+    value = max(0, min(100, percent))
+    filled = round(width * value / 100)
+    return f"[{'#' * filled}{'-' * (width - filled)}]"
+
+
+def live_progress_line(event: dict) -> str:
+    total = max(1, int(event.get("total_stages") or 1))
+    current = max(1, int(event.get("stage_number") or 1))
+    percent = round((current - 1) * 100 / total)
+    elapsed = float(event.get("elapsed") or 0)
+    spinner = SPINNER[int(elapsed * 10) % len(SPINNER)]
+    bar = c(progress_bar(percent), "cyan", bold=True)
+    stage = event.get("stage") or "unknown"
+    findings = int(event.get("findings") or 0)
+    return (
+        f"{c(spinner, 'yellow', bold=True)} Stage {current}/{total}: {stage}  "
+        f"Overall {bar} {percent:3d}%  "
+        f"Elapsed {elapsed_time(elapsed)}  Findings {findings}"
+    )

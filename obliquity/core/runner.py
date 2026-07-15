@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,31 @@ from obliquity.core.database import (
 from obliquity.core.gameplan import Gameplan, fingerprint_stage
 
 EventCallback = Callable[[dict], None]
+
+
+def live_finding_counter(json_output: Path) -> Callable[[], int]:
+    position = 0
+    count = 0
+
+    def update() -> int:
+        nonlocal position, count
+        if not json_output.exists():
+            return count
+        with json_output.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(position)
+            while line := handle.readline():
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (item.get("url") or item.get("target")) and (
+                    item.get("status") is not None or item.get("status_code") is not None
+                ):
+                    count += 1
+            position = handle.tell()
+        return count
+
+    return update
 
 
 def safe_name(value: str) -> str:
@@ -141,8 +167,21 @@ def run_gameplan(
             event_callback({**common, "action": "starting"})
 
         mark_run_started(conn, run["id"])
-        exit_code, error = run_command(cmd, raw_output)
-        status = "completed" if exit_code == 0 else "failed"
+        count_findings = live_finding_counter(json_output)
+
+        def report_progress(elapsed: float) -> None:
+            if event_callback:
+                event_callback(
+                    {
+                        **common,
+                        "action": "progress",
+                        "elapsed": elapsed,
+                        "findings": count_findings(),
+                    }
+                )
+
+        exit_code, error = run_command(cmd, raw_output, report_progress)
+        status = "completed" if exit_code == 0 else "interrupted" if exit_code == 130 else "failed"
         mark_run_finished(conn, run["id"], exit_code, status, error)
 
         findings = parse_json_output(

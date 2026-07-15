@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
@@ -68,10 +70,34 @@ def build_command(
     return cmd
 
 
-def run_command(cmd: list[str], raw_output: Path) -> tuple[int, str | None]:
+ProgressCallback = Callable[[float], None]
+
+
+def run_command(
+    cmd: list[str],
+    raw_output: Path,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[int, str | None]:
     raw_output.parent.mkdir(parents=True, exist_ok=True)
     with raw_output.open("w", encoding="utf-8", errors="replace") as handle:
-        proc = subprocess.run(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True)
+        proc = subprocess.Popen(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True)
+        started = time.monotonic()
+        try:
+            while proc.poll() is None:
+                if progress_callback:
+                    progress_callback(time.monotonic() - started)
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            return 130, "feroxbuster was interrupted by the user"
+
+        if progress_callback:
+            progress_callback(time.monotonic() - started)
     if proc.returncode != 0:
         return proc.returncode, f"feroxbuster exited with code {proc.returncode}"
     return proc.returncode, None
