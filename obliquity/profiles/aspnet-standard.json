@@ -1,0 +1,35 @@
+{
+  "name": "aspnet-standard",
+  "description": "IIS / ASP.NET discovery plan with ASP.NET extensions and backup/config checks.",
+  "stages": [
+    {
+      "name": "common-directories",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "aspnet-common-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["aspx", "ashx", "asmx", "svc", "config", "axd"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "backup-and-config-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["bak", "old", "zip", "config", "txt", "xml", "json", "log"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "limited-recursion",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["aspx", "ashx", "asmx", "svc", "config"],
+      "recursion": true,
+      "depth": 2,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    }
+  ]
+}

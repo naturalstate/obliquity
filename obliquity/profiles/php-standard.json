@@ -1,0 +1,35 @@
+{
+  "name": "php-standard",
+  "description": "PHP discovery plan with common PHP, backup, and config extensions.",
+  "stages": [
+    {
+      "name": "common-directories",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "php-common-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["php", "phtml", "inc"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "backup-and-config-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["bak", "old", "zip", "tar", "tar.gz", "conf", "config", "txt", "log", "sql"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    },
+    {
+      "name": "limited-recursion",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["php", "txt", "bak"],
+      "recursion": true,
+      "depth": 2,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
+    }
+  ]
+}

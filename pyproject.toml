@@ -1,0 +1,13 @@
+[project]
+name = "obliquity-mvp"
+version = "0.1.0"
+description = "Obliquity Bust MVP: staged feroxbuster orchestration"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+obliquity = "obliquity.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

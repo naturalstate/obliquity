@@ -1,0 +1,20 @@
+{
+  "name": "api-quick",
+  "description": "Lightweight API-adjacent content discovery. This is not parameter fuzzing; ffuf module comes later.",
+  "stages": [
+    {
+      "name": "api-common-paths",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403, 405]
+    },
+    {
+      "name": "api-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": ["json", "yaml", "yml", "xml", "txt", "config", "bak"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403, 405]
+    }
+  ]
+}
