@@ -201,7 +201,12 @@ def create_or_update_run(
 
 def mark_run_started(conn: sqlite3.Connection, run_id: int) -> None:
     conn.execute(
-        "UPDATE runs SET status = 'running', started_at = CURRENT_TIMESTAMP, error = NULL WHERE id = ?",
+        """
+        UPDATE runs
+        SET status = 'running', started_at = CURRENT_TIMESTAMP,
+            finished_at = NULL, exit_code = NULL, error = NULL
+        WHERE id = ?
+        """,
         (run_id,),
     )
     conn.commit()

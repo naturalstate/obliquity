@@ -185,7 +185,7 @@ def print_run_event(event: dict) -> None:
         bullet("Raw output", event.get("raw_output"))
         bullet("JSON output", event.get("json_output"))
         if event.get("error"):
-            bullet("Error", event["error"], color="red")
+            bullet("Error", event["error"], color=color)
         return
 
 
@@ -307,7 +307,7 @@ def cmd_bust_run(args) -> None:
         die(f"host not found in project: {args.url}. Add it first with: obliquity host add")
     gameplan = resolve_gameplan(args.gameplan)
 
-    mode = "Dry Run" if args.dry_run else "Run"
+    mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     print_gameplan_summary(project, host, gameplan, mode=mode, args=args)
 
     section("Execution", "cyan")
@@ -332,7 +332,8 @@ def cmd_bust_run(args) -> None:
     interrupted = sum(1 for item in results if item.get("status") == "interrupted")
     findings = sum(int(item.get("new_findings") or 0) for item in results)
 
-    section("Run summary", "green" if failed == 0 else "red")
+    summary_color = "red" if failed else "yellow" if interrupted else "green"
+    section("Run summary", summary_color)
     kv("Completed stages", completed, color="green")
     kv("Skipped stages", skipped, color="yellow")
     kv("Planned stages", planned, color="magenta")
@@ -343,7 +344,7 @@ def cmd_bust_run(args) -> None:
 
 
 def cmd_bust_resume(args) -> None:
-    # Resume is implemented by re-running the selected gameplan. Completed stage fingerprints are skipped.
+    args.resume = True
     cmd_bust_run(args)
 
 
@@ -448,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
     bres.add_argument("project")
     bres.add_argument("url")
     bres.add_argument("--gameplan", default="generic-quick")
-    bres.add_argument("--force", action="store_true")
+    bres.set_defaults(force=False)
     bres.add_argument("--dry-run", action="store_true")
     bres.add_argument("--rate-limit", type=int)
     bres.add_argument("--threads", type=int)

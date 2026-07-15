@@ -73,6 +73,17 @@ def build_command(
 ProgressCallback = Callable[[float], None]
 
 
+def terminate_process(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
 def run_command(
     cmd: list[str],
     raw_output: Path,
@@ -88,12 +99,7 @@ def run_command(
                     progress_callback(time.monotonic() - started)
                 time.sleep(0.1)
         except KeyboardInterrupt:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+            terminate_process(proc)
             return 130, "feroxbuster was interrupted by the user"
 
         if progress_callback:

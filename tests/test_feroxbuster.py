@@ -1,7 +1,9 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import Mock, patch
 
-from obliquity.adapters.feroxbuster import build_command
+from obliquity.adapters.feroxbuster import build_command, run_command, terminate_process
 from obliquity.core.gameplan import Stage
 
 
@@ -44,3 +46,42 @@ class BuildCommandTests(TestCase):
 
         self.assertIn("--no-recursion", command)
         self.assertNotIn("--recursive", command)
+
+
+class ProcessControlTests(TestCase):
+    def test_terminate_process_stops_running_process(self) -> None:
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+
+        terminate_process(proc)
+
+        proc.terminate.assert_called_once_with()
+        proc.wait.assert_called_once_with(timeout=3)
+        proc.kill.assert_not_called()
+
+    def test_terminate_process_kills_process_after_timeout(self) -> None:
+        from subprocess import TimeoutExpired
+
+        proc = Mock()
+        proc.poll.return_value = None
+        proc.wait.side_effect = [TimeoutExpired("feroxbuster", 3), 0]
+
+        terminate_process(proc)
+
+        proc.terminate.assert_called_once_with()
+        proc.kill.assert_called_once_with()
+
+    def test_keyboard_interrupt_returns_interrupted_exit_code(self) -> None:
+        proc = Mock()
+        proc.poll.side_effect = KeyboardInterrupt
+        proc.returncode = None
+
+        with TemporaryDirectory() as tmp, patch(
+            "obliquity.adapters.feroxbuster.subprocess.Popen", return_value=proc
+        ), patch("obliquity.adapters.feroxbuster.terminate_process") as terminate:
+            code, error = run_command(["feroxbuster"], Path(tmp) / "raw.txt")
+
+        terminate.assert_called_once_with(proc)
+        self.assertEqual(code, 130)
+        self.assertIn("interrupted", error or "")
