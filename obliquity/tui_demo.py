@@ -41,7 +41,7 @@ from textual.widgets import (
 
 class Brand(Static):
     DEFAULT_CSS = """
-    Brand { color: $accent; text-style: bold; padding: 0 1; height: 3; }
+    Brand { color: #b4d9ba; text-style: bold; padding: 0 1; height: 3; }
     """
 
     def render(self) -> str:
@@ -274,33 +274,34 @@ class ObliquityTuiDemo(App[None]):
     TITLE = "Obliquity // Operator Console Demo"
     CSS = """
     * { transition: opacity 180ms linear; }
-    Screen { background: #101313; color: #d6ded9; }
-    Header { background: #171b1a; color: #72d69b; }
-    Footer { background: #171b1a; color: #8b9991; }
-    #home-shell, .page-shell { width: 100%; height: 100%; padding: 1 2; }
-    #home-columns, .form-columns { height: 1fr; }
-    #home-menu { width: 46%; padding: 1 2 0 0; }
-    #home-preview { width: 54%; padding: 2 2; border: round #315044; background: #151a18; }
-    #snapshot { color: #8fe0aa; padding: 1 2; border: tall #477458; }
-    #home-hint { color: #8daaa0; padding: 3 2; }
-    .eyebrow { color: #72d69b; text-style: bold; margin: 1 0; }
-    .page-title { color: #8fe0aa; text-style: bold; padding: 1 0; }
-    #main-menu { height: auto; border: round #315044; background: #151a18; }
-    #main-menu > ListItem { padding: 0 1; height: 2; color: #b5c2ba; }
-    #main-menu > ListItem.--highlight { background: #315044; color: #e8fff0; text-style: bold; }
-    .form-panel { width: 1fr; padding: 1 2; border: round #315044; background: #151a18; margin: 0 1; }
+    Screen { background: #0b0d0c; color: #c5cec8; }
+    Header { background: #0b0d0c; color: #83c995; height: 1; }
+    Footer { background: #161917; color: #8b9991; height: 1; }
+    #home-shell, .page-shell { width: 100%; height: 100%; padding: 0 1; }
+    #home-shell:before, .page-shell:before { content: " OBLIQUITY / SESSION 07 / LOCAL  ::  READY "; color: #83c995; height: 1; dock: top; }
+    #home-columns, .form-columns { height: 1fr; padding: 1 0; }
+    #home-menu { width: 42%; padding: 1 2 0 0; border: solid #39433d; border-left: none; }
+    #home-preview { width: 58%; padding: 1 2; border: solid #39433d; border-right: none; background: #101310; }
+    #snapshot { color: #9ed2a8; padding: 1 2; border: solid #47634e; background: #0d110e; }
+    #home-hint { color: #829188; padding: 2 1; }
+    .eyebrow { color: #83c995; text-style: bold; margin: 1 0; }
+    .page-title { color: #b4d9ba; text-style: bold; padding: 1 0; border-bottom: solid #39433d; }
+    #main-menu { height: auto; border: none; background: transparent; }
+    #main-menu > ListItem { padding: 0 1; height: 2; color: #aab5ae; }
+    #main-menu > ListItem.--highlight { background: #31523a; color: #effff1; text-style: bold; }
+    .form-panel { width: 1fr; padding: 1 2; border: solid #39433d; background: #101310; margin: 0 1; }
     .detail-panel { color: #abd4c2; }
     .review-shell { align: center middle; }
-    .review-card, .settings-card { width: 70%; padding: 2 3; border: double #32c98b; background: #0b2025; }
+    .review-card, .settings-card { width: 70%; padding: 2 3; border: solid #47634e; background: #101310; }
     .settings-card { width: 60%; }
     .key-hint { color: #829188; padding: 1 0; dock: bottom; }
     .dashboard-shell { padding: 1 2; }
     .metric-row { height: 7; }
-    .metric { width: 1fr; margin: 1; padding: 1; text-align: center; color: #9ac9a9; border: round #315044; background: #151a18; text-style: bold; }
-    .metric-green { color: #72d69b; border: round #477458; }
+    .metric { width: 1fr; margin: 1; padding: 1; text-align: center; color: #9ac9a9; border: solid #39433d; background: #101310; text-style: bold; }
+    .metric-green { color: #83c995; border: solid #47634e; }
     #traffic { height: 10; margin: 1 0; color: #40e3a0; background: #091b20; }
     DataTable { height: 1fr; }
-    RichLog { height: 1fr; border: round #164957; background: #061116; color: #9ef3c8; }
+    RichLog { height: 1fr; border: solid #39433d; background: #080a09; color: #9ed2a8; }
     Button { margin: 1 0; }
     Select, Input { margin: 0 0 1 0; }
     """
