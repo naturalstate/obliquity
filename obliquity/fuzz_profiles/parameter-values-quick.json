@@ -1,0 +1,7 @@
+{
+  "name": "parameter-values-quick",
+  "description": "Fuzz values for a known parameter or other explicit FUZZ location.",
+  "operation_category": "parameter-value",
+  "wordlist": "parameter-values-quick.txt",
+  "autocalibrate": true
+}

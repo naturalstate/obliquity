@@ -27,6 +27,7 @@ from obliquity.core.database import (
     create_project,
     delete_host,
     delete_project,
+    get_coverage,
     get_findings,
     get_host,
     get_project,
@@ -35,8 +36,11 @@ from obliquity.core.database import (
     update_host,
 )
 from obliquity.core.gameplan import find_builtin_gameplan, list_builtin_gameplans, load_gameplan
+from obliquity.core.ffuf_runner import run_fuzz_plan
+from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
 from obliquity.core.reporting import generate_html
 from obliquity.core.runner import preview_plan, run_gameplan
+from obliquity.core.tools import inventory_tools
 
 APP_DIR = Path(os.environ.get("OBLIQUITY_HOME", Path.home() / ".obliquity"))
 DB_PATH = APP_DIR / "obliquity.db"
@@ -67,6 +71,13 @@ def resolve_gameplan(name_or_path: str):
     if path.exists():
         return load_gameplan(path)
     return load_gameplan(find_builtin_gameplan(name_or_path))
+
+
+def resolve_fuzz_plan(name_or_path: str):
+    path = Path(name_or_path)
+    if path.exists():
+        return load_fuzz_plan(path)
+    return load_fuzz_plan(find_fuzz_plan(name_or_path))
 
 
 def require_project(conn, name: str):
@@ -322,6 +333,143 @@ def cmd_gameplans_list(args) -> None:
                 print(f"     {c('Recursion:', 'cyan', bold=True)} {fmt_recursion(row['recursion'], row['depth'])}")
             blank()
 
+    section("FFUF fuzz gameplans", "cyan")
+    for path in list_fuzz_plans():
+        plan = load_fuzz_plan(path)
+        subsection(plan.name, "magenta")
+        bullet("Purpose", plan.description)
+        bullet("Operation", plan.operation_category)
+        bullet("Tool", "ffuf")
+        if not args.brief:
+            bullet("Wordlist", plan.wordlist)
+            bullet("Autocalibration", "yes" if plan.autocalibrate else "no")
+
+
+def cmd_doctor(args) -> None:
+    statuses = inventory_tools()
+    section("Core tools", "cyan")
+    for item in [status for status in statuses if status.required]:
+        color = "green" if item.installed else "yellow"
+        state = item.version or item.path or "missing - strongly recommended"
+        bullet(item.name, state, color=color)
+    section("Optional tools", "blue")
+    for item in [status for status in statuses if not status.required]:
+        state = item.version or item.path or "not installed"
+        bullet(item.name, state, color="green" if item.installed else "gray")
+    missing = [item.name for item in statuses if item.required and not item.installed]
+    if missing:
+        print(c(f"\nObliquity remains usable, but core capabilities are unavailable: {', '.join(missing)}", "yellow"))
+
+
+def cmd_coverage(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    host = None
+    if args.url:
+        host = get_host(conn, project["id"], args.url)
+        if host is None:
+            die(f"host not found in project: {args.url}")
+    rows = get_coverage(conn, project["id"], host["id"] if host else None)
+    section(f"Coverage: {project['name']}", "cyan")
+    if not rows:
+        print("No operations recorded yet.")
+        return
+    current_host = None
+    for row in rows:
+        if row["host_url"] != current_host:
+            current_host = row["host_url"]
+            subsection(current_host, "magenta")
+        print(
+            f"  {c(row['operation_category'].ljust(18), 'cyan', bold=True)} "
+            f"{c(row['tool'].ljust(13), 'yellow')} "
+            f"{c(row['status'].ljust(12), 'green' if row['status'] == 'completed' else 'yellow')} "
+            f"{row['gameplan_name']}"
+        )
+        if row["operation_scope"]:
+            print(f"    scope: {row['operation_scope']}")
+
+
+def _fuzz_url_template(host_url: str, plan, args) -> tuple[str | None, str | None]:
+    if plan.operation_category == "parameter-name":
+        if not args.endpoint:
+            die("parameter-names-quick requires --endpoint, e.g. --endpoint /search")
+        endpoint = f"{host_url.rstrip('/')}/{args.endpoint.lstrip('/')}"
+        separator = "&" if "?" in endpoint else "?"
+        return f"{endpoint}{separator}FUZZ={args.test_value}", None
+    if plan.operation_category == "parameter-value":
+        if not args.template or "FUZZ" not in args.template:
+            die("parameter-values-quick requires --template containing FUZZ")
+        template = args.template
+        if template.startswith("/"):
+            template = f"{host_url.rstrip('/')}{template}"
+        return template, None
+    if plan.operation_category == "request-input":
+        if not args.request:
+            die("api-request-quick requires --request pointing to a raw HTTP request containing FUZZ")
+        return None, args.request
+    die(f"unsupported ffuf operation category: {plan.operation_category}")
+
+
+def cmd_fuzz_run(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    host = get_host(conn, project["id"], args.url)
+    if host is None:
+        die(f"host not found in project: {args.url}. Add it first with: obliquity host add")
+    plan = resolve_fuzz_plan(args.gameplan)
+    url_template, request_file = _fuzz_url_template(host["url"], plan, args)
+    mode = "Plan" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
+    section(f"Obliquity Fuzz: {mode}", "cyan")
+    kv("Project", project["name"])
+    kv("Target", host["url"])
+    kv("Tool", "ffuf")
+    kv("Gameplan", plan.name)
+    kv("Purpose", plan.description)
+    kv("Operation", plan.operation_category)
+    kv("Scope", url_template or request_file)
+    kv("Wordlist", args.wordlist or plan.wordlist)
+    section("Execution", "cyan")
+    results = run_fuzz_plan(
+        conn,
+        project,
+        host,
+        plan,
+        url_template=url_template,
+        request_file=request_file,
+        wordlist=args.wordlist,
+        request_proto=args.request_proto,
+        method=args.method,
+        data=args.data,
+        headers=args.header or [],
+        proxy=args.proxy,
+        rate=args.rate,
+        threads=args.threads,
+        match_codes=args.match_codes,
+        filter_codes=args.filter_codes,
+        filter_size=args.filter_size,
+        force=args.force,
+        dry_run=args.dry_run,
+        event_callback=print_run_event,
+    )
+    failed = sum(1 for item in results if item.get("status") == "failed")
+    interrupted = sum(1 for item in results if item.get("status") == "interrupted")
+    findings = sum(int(item.get("new_findings") or 0) for item in results)
+    skipped = sum(1 for item in results if item.get("action") == "skipped")
+    section("Fuzz summary", "red" if failed else "yellow" if interrupted else "green")
+    kv("Skipped operations", skipped, color="yellow" if skipped else "green")
+    kv("New findings", findings)
+    kv("Coverage command", f"obliquity coverage {project['name']} {host['url']}")
+    if not args.dry_run and not failed and not interrupted and (args.report or args.open_report):
+        output = write_html_report(conn, project)
+        if args.open_report:
+            open_html_report(output)
+
+
+def cmd_fuzz_resume(args) -> None:
+    args.resume = True
+    args.force = False
+    cmd_fuzz_run(args)
+
 
 def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
@@ -444,6 +592,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog="""examples:
   obliquity gameplans list --brief
+  obliquity doctor
+  obliquity fuzz run acme https://app.acme.test --gameplan parameter-names-quick --endpoint /search
+  obliquity coverage acme
   obliquity project create acme
   obliquity project archive acme --yes --if-exists
   obliquity host add acme https://app.acme.test --profile generic
@@ -458,6 +609,74 @@ Run 'obliquity COMMAND --help' or 'obliquity COMMAND SUBCOMMAND --help'
 for detailed options and examples. Only test systems you are authorized to assess.""",
     )
     sub = p.add_subparsers(dest="cmd", required=True, title="commands", metavar="COMMAND")
+
+    doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
+    doctor.set_defaults(func=cmd_doctor)
+
+    fuzz = sub.add_parser("fuzz", help="run ffuf parameter and request fuzzing", formatter_class=formatter, epilog="""examples:
+  obliquity fuzz run acme https://app.test --gameplan parameter-names-quick --endpoint /search
+  obliquity fuzz run acme https://app.test --gameplan parameter-values-quick --template '/search?q=FUZZ'
+  obliquity fuzz run acme https://app.test --gameplan api-request-quick --request request.txt""")
+    fuzz_sub = fuzz.add_subparsers(dest="fuzz_cmd", required=True)
+    fl = fuzz_sub.add_parser("list", help="list ffuf gameplans", formatter_class=formatter)
+    fl.add_argument("--brief", action="store_true")
+    fl.set_defaults(func=cmd_gameplans_list)
+    fr = fuzz_sub.add_parser("run", help="execute an ffuf gameplan", formatter_class=formatter)
+    fr.add_argument("project", help="project name")
+    fr.add_argument("url", help="host URL already added to the project")
+    fr.add_argument("--gameplan", default="parameter-names-quick", help="ffuf gameplan name")
+    fr.add_argument("--wordlist", help="override the gameplan wordlist")
+    fr.add_argument("--endpoint", help="path for parameter-name fuzzing")
+    fr.add_argument("--template", help="URL template containing FUZZ")
+    fr.add_argument("--test-value", default="test", help="fixed parameter value")
+    fr.add_argument("--request", help="raw HTTP request file")
+    fr.add_argument("--request-proto", default="https", help="protocol for raw requests")
+    fr.add_argument("--match-codes", help="ffuf match status codes")
+    fr.add_argument("--filter-codes", help="ffuf filter status codes")
+    fr.add_argument("--filter-size", help="ffuf filter response sizes")
+    fr.add_argument("--force", action="store_true", help="rerun equivalent completed coverage")
+    fr.add_argument("--report", action="store_true", help="generate HTML report after success")
+    fr.add_argument("--open-report", action="store_true", help="generate and open HTML report after success")
+    fr.add_argument("--header", action="append", help="header; repeatable")
+    fr.add_argument("--method", help="HTTP method")
+    fr.add_argument("--data", help="request body, including FUZZ")
+    fr.add_argument("--proxy", help="HTTP/SOCKS proxy")
+    fr.add_argument("--threads", type=int, help="ffuf worker count")
+    fr.add_argument("--rate", type=int, help="requests per second")
+    fr.add_argument("--dry-run", action="store_true", help="show command without executing ffuf")
+    fr.set_defaults(func=cmd_fuzz_run)
+    fres = fuzz_sub.add_parser("resume", help="resume an ffuf gameplan", formatter_class=formatter)
+    for action in fr._actions[1:]:
+        if action.dest in {"help", "project", "url"}:
+            continue
+        # Copying argparse actions is unsafe; define resume through the same parser arguments below.
+    fres.add_argument("project")
+    fres.add_argument("url")
+    fres.add_argument("--gameplan", default="parameter-names-quick")
+    fres.add_argument("--wordlist")
+    fres.add_argument("--endpoint")
+    fres.add_argument("--template")
+    fres.add_argument("--test-value", default="test")
+    fres.add_argument("--request")
+    fres.add_argument("--request-proto", default="https")
+    fres.add_argument("--match-codes")
+    fres.add_argument("--filter-codes")
+    fres.add_argument("--filter-size")
+    fres.add_argument("--header", action="append")
+    fres.add_argument("--method")
+    fres.add_argument("--data")
+    fres.add_argument("--proxy")
+    fres.add_argument("--rate", type=int)
+    fres.add_argument("--threads", type=int)
+    fres.add_argument("--dry-run", action="store_true")
+    fres.add_argument("--report", action="store_true")
+    fres.add_argument("--open-report", action="store_true")
+    fres.set_defaults(func=cmd_fuzz_resume)
+
+    coverage = sub.add_parser("coverage", help="show operation coverage by host and tool")
+    coverage.add_argument("project")
+    coverage.add_argument("url", nargs="?")
+    coverage.set_defaults(func=cmd_coverage)
 
     gameplans = sub.add_parser("gameplans", help="inspect built-in scan gameplans")
     gameplans_sub = gameplans.add_subparsers(dest="gameplans_cmd", required=True)

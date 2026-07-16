@@ -1,0 +1,7 @@
+{
+  "name": "parameter-names-quick",
+  "description": "Discover accepted GET parameter names using a harmless fixed value.",
+  "operation_category": "parameter-name",
+  "wordlist": "parameter-names-quick.txt",
+  "autocalibrate": true
+}

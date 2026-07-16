@@ -1,0 +1,7 @@
+{
+  "name": "api-request-quick",
+  "description": "Fuzz an explicit FUZZ marker in a raw HTTP request file.",
+  "operation_category": "request-input",
+  "wordlist": "parameter-values-quick.txt",
+  "autocalibrate": true
+}

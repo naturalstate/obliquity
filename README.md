@@ -131,6 +131,55 @@ obliquity bust run acme https://app.acme.com \
   --header 'Cookie: session=replace-me'
 ```
 
+## ffuf parameter and API fuzzing
+
+Feroxbuster is used for content discovery. ffuf is used when the fuzz value belongs inside a request: parameter names, parameter values, or a raw API request body.
+
+List ffuf gameplans:
+
+```bash
+obliquity gameplans list
+```
+
+Discover accepted GET parameter names:
+
+```bash
+obliquity fuzz run acme https://app.acme.com \
+  --gameplan parameter-names-quick \
+  --endpoint /search
+```
+
+Fuzz values for a known parameter:
+
+```bash
+obliquity fuzz run acme https://app.acme.com \
+  --gameplan parameter-values-quick \
+  --template '/search?q=FUZZ'
+```
+
+Fuzz a raw request captured from Burp:
+
+```bash
+obliquity fuzz run acme https://api.acme.com \
+  --gameplan api-request-quick \
+  --request ./request.txt
+```
+
+Review operation coverage across tools:
+
+```bash
+obliquity coverage acme
+obliquity coverage acme https://api.acme.com
+```
+
+Check core and optional tools:
+
+```bash
+obliquity doctor
+```
+
+Feroxbuster, ffuf, and hashcat are core tool recommendations. Missing tools produce warnings, but Obliquity remains installable and each operation checks for its own executable when run. Gobuster, wfuzz, and John are optional adapters for future expansion.
+
 ## Built-in gameplans
 
 - `generic-quick`

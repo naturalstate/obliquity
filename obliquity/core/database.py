@@ -73,7 +73,17 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _ensure_column(conn, "runs", "tool", "TEXT NOT NULL DEFAULT 'feroxbuster'")
+    _ensure_column(conn, "runs", "operation_category", "TEXT NOT NULL DEFAULT 'content-path'")
+    _ensure_column(conn, "runs", "operation_scope", "TEXT")
     return conn
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        conn.commit()
 
 
 def get_project(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
@@ -185,18 +195,27 @@ def create_or_update_run(
     raw_output_path: str,
     json_output_path: str,
     status: str = "pending",
+    tool: str = "feroxbuster",
+    operation_category: str = "content-path",
+    operation_scope: str | None = None,
 ) -> sqlite3.Row:
     conn.execute(
         """
         INSERT INTO runs(project_id, host_id, gameplan_name, stage_name, fingerprint, command,
-                         raw_output_path, json_output_path, status)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         raw_output_path, json_output_path, status, tool, operation_category, operation_scope)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(fingerprint) DO UPDATE SET
             command=excluded.command,
             raw_output_path=excluded.raw_output_path,
-            json_output_path=excluded.json_output_path
+            json_output_path=excluded.json_output_path,
+            tool=excluded.tool,
+            operation_category=excluded.operation_category,
+            operation_scope=excluded.operation_scope
         """,
-        (project_id, host_id, gameplan_name, stage_name, fingerprint, command, raw_output_path, json_output_path, status),
+        (
+            project_id, host_id, gameplan_name, stage_name, fingerprint, command,
+            raw_output_path, json_output_path, status, tool, operation_category, operation_scope,
+        ),
     )
     conn.commit()
     run = get_run_by_fingerprint(conn, fingerprint)
@@ -279,3 +298,18 @@ def get_runs(conn: sqlite3.Connection, project_id: int, status: str | None = Non
     if status:
         return list(conn.execute("SELECT * FROM runs WHERE project_id = ? AND status = ? ORDER BY id", (project_id, status)))
     return list(conn.execute("SELECT * FROM runs WHERE project_id = ? ORDER BY id", (project_id,)))
+
+
+def get_coverage(conn: sqlite3.Connection, project_id: int, host_id: int | None = None) -> list[sqlite3.Row]:
+    sql = """
+        SELECT r.*, h.url AS host_url
+        FROM runs r
+        JOIN hosts h ON h.id = r.host_id
+        WHERE r.project_id = ?
+    """
+    params: list[object] = [project_id]
+    if host_id is not None:
+        sql += " AND r.host_id = ?"
+        params.append(host_id)
+    sql += " ORDER BY h.url, r.operation_category, r.id"
+    return list(conn.execute(sql, params))

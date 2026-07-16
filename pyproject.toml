@@ -13,4 +13,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
-obliquity = ["profiles/*.json", "profiles/*.txt"]
+obliquity = ["profiles/*.json", "profiles/*.txt", "fuzz_profiles/*.json", "fuzz_profiles/*.txt"]
