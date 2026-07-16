@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
+import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 from obliquity.core.console import (
@@ -23,6 +26,7 @@ from obliquity.core.database import (
     connect,
     create_project,
     delete_host,
+    delete_project,
     get_findings,
     get_host,
     get_project,
@@ -37,6 +41,7 @@ from obliquity.core.runner import preview_plan, run_gameplan
 APP_DIR = Path(os.environ.get("OBLIQUITY_HOME", Path.home() / ".obliquity"))
 DB_PATH = APP_DIR / "obliquity.db"
 PROJECTS_DIR = APP_DIR / "projects"
+ARCHIVE_DIR = APP_DIR / "archive"
 
 BANNER = r"""
       ___.   .__  .__             .__  __
@@ -198,6 +203,35 @@ def cmd_project_create(args) -> None:
     kv("Root", project["root_dir"])
 
 
+def cmd_project_archive(args) -> None:
+    conn = connect(DB_PATH)
+    project = get_project(conn, args.name)
+    if project is None:
+        if args.if_exists:
+            section("Project archive", "yellow")
+            kv("Skipped", f"project not found: {args.name}", color="yellow")
+            return
+        die(f"project not found: {args.name}")
+    root = Path(project["root_dir"])
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    destination = ARCHIVE_DIR / f"{project['name']}-{timestamp}"
+    if not args.yes:
+        section("Confirm project archive", "yellow")
+        kv("Project", project["name"], color="yellow")
+        kv("From", root, color="yellow")
+        kv("To", destination, color="yellow")
+        print(c("Re-run with --yes to archive files and remove the project from the active database.", "yellow"))
+        return
+
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    if root.exists():
+        shutil.move(str(root), str(destination))
+    delete_project(conn, project["id"])
+    section("Project archived", "green")
+    kv("Project", project["name"])
+    kv("Backup", destination if destination.exists() else "No project files existed")
+
+
 def cmd_host_add(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
@@ -342,21 +376,43 @@ def cmd_bust_run(args) -> None:
     kv("New findings", findings)
     kv("Report command", f"obliquity report html {project['name']}")
 
+    if not args.dry_run and not failed and not interrupted and (
+        getattr(args, "report", False) or getattr(args, "open_report", False)
+    ):
+        output = write_html_report(conn, project)
+        if getattr(args, "open_report", False):
+            open_html_report(output)
+
 
 def cmd_bust_resume(args) -> None:
     args.resume = True
     cmd_bust_run(args)
 
 
-def cmd_report_html(args) -> None:
-    conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+def write_html_report(conn, project, output: Path | None = None) -> Path:
     runs = get_runs(conn, project["id"])
     findings = get_findings(conn, project["id"])
-    output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.html"
+    output = output or Path(project["root_dir"]) / "report.html"
     generate_html(project, runs, findings, output)
     section("HTML report", "green")
     kv("Report written", output)
+    return output
+
+
+def open_html_report(output: Path) -> None:
+    opened = webbrowser.open(output.resolve().as_uri())
+    if opened:
+        kv("Opened", output)
+    else:
+        print(c(f"Could not open a browser automatically. Open this file manually: {output}", "yellow"))
+
+
+def cmd_report_html(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    output = write_html_report(conn, project, Path(args.output) if args.output else None)
+    if args.open:
+        open_html_report(output)
 
 
 def cmd_runs(args) -> None:
@@ -389,9 +445,11 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""examples:
   obliquity gameplans list --brief
   obliquity project create acme
+  obliquity project archive acme --yes --if-exists
   obliquity host add acme https://app.acme.test --profile generic
   obliquity bust plan acme https://app.acme.test --gameplan generic-quick
   obliquity bust run acme https://app.acme.test --gameplan generic-quick
+  obliquity bust run acme https://app.acme.test --gameplan smoke-test --open-report
   obliquity bust resume acme https://app.acme.test --gameplan generic-quick
   obliquity runs acme
   obliquity report html acme
@@ -424,6 +482,17 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
     pc.add_argument("name", help="unique project name")
     pc.set_defaults(func=cmd_project_create)
+
+    pa = project_sub.add_parser(
+        "archive",
+        help="back up project files and remove the active database record",
+        formatter_class=formatter,
+        epilog="example:\n  obliquity project archive acme --yes",
+    )
+    pa.add_argument("name", help="project name")
+    pa.add_argument("--yes", action="store_true", help="archive without prompting")
+    pa.add_argument("--if-exists", action="store_true", help="succeed when the project does not exist")
+    pa.set_defaults(func=cmd_project_archive)
 
     host = sub.add_parser("host", help="add, inspect, update, or remove project hosts")
     host_sub = host.add_subparsers(dest="host_cmd", required=True)
@@ -491,6 +560,8 @@ for detailed options and examples. Only test systems you are authorized to asses
     br.add_argument("--threads", type=int, help="feroxbuster worker thread count")
     br.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
     br.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
+    br.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
+    br.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
     br.set_defaults(func=cmd_bust_run)
 
     bres = bust_sub.add_parser(
@@ -526,6 +597,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
     rh.add_argument("project", help="project name")
     rh.add_argument("--output", help="custom report path")
+    rh.add_argument("--open", action="store_true", help="open the report in the default browser")
     rh.set_defaults(func=cmd_report_html)
 
     return p

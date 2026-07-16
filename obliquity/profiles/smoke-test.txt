@@ -1,0 +1,7 @@
+robots.txt
+favicon.ico
+admin
+login
+api
+health
+status

@@ -90,6 +90,12 @@ def create_project(conn: sqlite3.Connection, name: str, root_dir: Path) -> sqlit
     return project
 
 
+def delete_project(conn: sqlite3.Connection, project_id: int) -> bool:
+    cur = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def add_host(
     conn: sqlite3.Connection,
     project_id: int,

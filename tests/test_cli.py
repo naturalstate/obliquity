@@ -23,3 +23,18 @@ class HelpTests(TestCase):
         self.assertIn("--proxy", help_text)
         self.assertIn("--header", help_text)
         self.assertIn("examples:", help_text)
+
+    def test_run_accepts_report_options(self) -> None:
+        args = build_parser().parse_args(
+            ["bust", "run", "demo", "https://example.test", "--open-report"]
+        )
+
+        self.assertTrue(args.open_report)
+
+    def test_archive_accepts_nonexistent_project_mode(self) -> None:
+        args = build_parser().parse_args(
+            ["project", "archive", "demo", "--yes", "--if-exists"]
+        )
+
+        self.assertTrue(args.yes)
+        self.assertTrue(args.if_exists)

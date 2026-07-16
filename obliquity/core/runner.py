@@ -103,7 +103,7 @@ def run_gameplan(
     total_stages = len(gameplan.stages)
 
     for idx, stage in enumerate(gameplan.stages, start=1):
-        fingerprint = fingerprint_stage(url, gameplan, stage)
+        fingerprint = fingerprint_stage(url, gameplan, stage, project_id=project["id"])
         existing = get_run_by_fingerprint(conn, fingerprint)
         if existing and existing["status"] == "completed" and not force:
             item = {

@@ -60,3 +60,28 @@ class ResumeTests(TestCase):
             statuses = [run["status"] for run in get_runs(conn, project["id"])]
             self.assertEqual(statuses, ["completed", "completed"])
             conn.close()
+
+    def test_completed_stage_is_scoped_to_its_project(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            first_project = create_project(conn, "first", root / "first")
+            second_project = create_project(conn, "second", root / "second")
+            first_host = add_host(conn, first_project["id"], "https://example.com")
+            second_host = add_host(conn, second_project["id"], "https://example.com")
+            gameplan = Gameplan(
+                name="shared-plan",
+                description="",
+                stages=[Stage(name="only", wordlist="words.txt")],
+            )
+
+            with patch("obliquity.core.runner.require_feroxbuster"), patch(
+                "obliquity.core.runner.run_command", return_value=(0, None)
+            ) as execute:
+                first = run_gameplan(conn, first_project, first_host, gameplan)
+                second = run_gameplan(conn, second_project, second_host, gameplan)
+
+            self.assertEqual(first[0]["status"], "completed")
+            self.assertEqual(second[0]["status"], "completed")
+            self.assertEqual(execute.call_count, 2)
+            conn.close()

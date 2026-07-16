@@ -102,6 +102,20 @@ Generate report:
 obliquity report html acme
 ```
 
+Generate and open the report automatically after a successful scan:
+
+```bash
+obliquity bust run acme https://app.acme.com --gameplan generic-quick --open-report
+```
+
+Archive an old project before reusing its name:
+
+```bash
+obliquity project archive acme --yes --if-exists
+```
+
+Project files are moved to `~/.obliquity/archive/` and the active database record is removed.
+
 The report will be written to:
 
 ```text
@@ -124,6 +138,7 @@ obliquity bust run acme https://app.acme.com \
 - `aspnet-standard`
 - `php-standard`
 - `api-quick`
+- `smoke-test` (seven entries, non-recursive; intended only for installation/workflow checks)
 
 Use a custom gameplan path instead of a built-in name:
 

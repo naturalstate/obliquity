@@ -30,6 +30,10 @@ class Gameplan:
 def load_gameplan(path: Path) -> Gameplan:
     data = json.loads(path.read_text(encoding="utf-8"))
     stages = [Stage(**stage) for stage in data.get("stages", [])]
+    for stage in stages:
+        wordlist = Path(stage.wordlist)
+        if not wordlist.is_absolute():
+            stage.wordlist = str((path.parent / wordlist).resolve())
     if not stages:
         raise ValueError(f"Gameplan has no stages: {path}")
     return Gameplan(
@@ -39,8 +43,9 @@ def load_gameplan(path: Path) -> Gameplan:
     )
 
 
-def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage) -> str:
+def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage, *, project_id: int) -> str:
     payload: dict[str, Any] = {
+        "project_id": project_id,
         "url": url.rstrip("/"),
         "gameplan": gameplan.name,
         "stage": stage.name,
