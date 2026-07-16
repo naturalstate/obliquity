@@ -278,7 +278,6 @@ class ObliquityTuiDemo(App[None]):
     Header { background: #0b0d0c; color: #83c995; height: 1; }
     Footer { background: #161917; color: #8b9991; height: 1; }
     #home-shell, .page-shell { width: 100%; height: 100%; padding: 0 1; }
-    #home-shell:before, .page-shell:before { content: " OBLIQUITY / SESSION 07 / LOCAL  ::  READY "; color: #83c995; height: 1; dock: top; }
     #home-columns, .form-columns { height: 1fr; padding: 1 0; }
     #home-menu { width: 42%; padding: 1 2 0 0; border: solid #39433d; border-left: none; }
     #home-preview { width: 58%; padding: 1 2; border: solid #39433d; border-right: none; background: #101310; }
