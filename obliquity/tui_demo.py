@@ -27,6 +27,8 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    ListItem,
+    ListView,
     ProgressBar,
     RichLog,
     Select,
@@ -79,11 +81,14 @@ class HomeScreen(SlideScreen):
             with Horizontal(id="home-columns"):
                 with Vertical(id="home-menu"):
                     yield Label("SELECT WORKFLOW", classes="eyebrow")
-                    yield MenuItem("[1]  DIRECTORY DISCOVERY", id="dirbust")
-                    yield MenuItem("[2]  PARAMETER / API FUZZING", id="fuzz")
-                    yield MenuItem("[3]  PASSWORD / HASH CRACKING", id="crack")
-                    yield MenuItem("[S]  SETTINGS", id="settings")
-                    yield MenuItem("[D]  LIVE DASHBOARD", id="dashboard")
+                    yield ListView(
+                        ListItem(Label("[1]  DIRECTORY DISCOVERY"), id="dirbust"),
+                        ListItem(Label("[2]  PARAMETER / API FUZZING"), id="fuzz"),
+                        ListItem(Label("[3]  PASSWORD / HASH CRACKING"), id="crack"),
+                        ListItem(Label("[S]  SETTINGS"), id="settings"),
+                        ListItem(Label("[D]  LIVE DASHBOARD"), id="dashboard"),
+                        id="main-menu",
+                    )
                 with Vertical(id="home-preview"):
                     yield Label("PROJECT SNAPSHOT", classes="eyebrow")
                     yield Static("PROJECT  acme-demo\nTARGET   https://api.example.test\nSTATUS   ready for operator input", id="snapshot")
@@ -91,9 +96,13 @@ class HomeScreen(SlideScreen):
             yield Static("↑↓ navigate   Enter select   1/2/3 workflows   S settings   D dashboard   Q quit", classes="key-hint")
         yield Footer()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_mount(self) -> None:
+        # Put keyboard focus on the menu so Up/Down work immediately.
+        self.query_one("#main-menu", ListView).focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
         actions = {"dirbust": self.action_open_dirbust, "fuzz": self.action_open_fuzz, "crack": self.action_open_crack, "settings": self.action_settings, "dashboard": self.action_dashboard}
-        action = actions.get(event.button.id)
+        action = actions.get(event.item.id)
         if action:
             action()
 
@@ -265,27 +274,30 @@ class ObliquityTuiDemo(App[None]):
     TITLE = "Obliquity // Operator Console Demo"
     CSS = """
     * { transition: opacity 180ms linear; }
-    Screen { background: #071015; color: #d7f9e9; }
-    Header { background: #0b1d24; color: #55f2b0; }
-    Footer { background: #0b1d24; color: #90a9a0; }
-    #home-shell, .page-shell { width: 100%; height: 100%; padding: 1 3; }
+    Screen { background: #101313; color: #d6ded9; }
+    Header { background: #171b1a; color: #72d69b; }
+    Footer { background: #171b1a; color: #8b9991; }
+    #home-shell, .page-shell { width: 100%; height: 100%; padding: 1 2; }
     #home-columns, .form-columns { height: 1fr; }
-    #home-menu { width: 44%; padding: 2 2 0 0; }
-    #home-preview { width: 56%; padding: 3 3; border: round #164957; background: #0a1920; }
-    #snapshot { color: #76ffc2; padding: 2; border: tall #1c755c; }
+    #home-menu { width: 46%; padding: 1 2 0 0; }
+    #home-preview { width: 54%; padding: 2 2; border: round #315044; background: #151a18; }
+    #snapshot { color: #8fe0aa; padding: 1 2; border: tall #477458; }
     #home-hint { color: #8daaa0; padding: 3 2; }
-    .eyebrow { color: #4fe3a1; text-style: bold; margin: 1 0; }
-    .page-title { color: #6af5b4; text-style: bold; padding: 1 0; }
-    .form-panel { width: 1fr; padding: 1 2; border: round #164957; background: #0a1920; margin: 0 1; }
+    .eyebrow { color: #72d69b; text-style: bold; margin: 1 0; }
+    .page-title { color: #8fe0aa; text-style: bold; padding: 1 0; }
+    #main-menu { height: auto; border: round #315044; background: #151a18; }
+    #main-menu > ListItem { padding: 0 1; height: 2; color: #b5c2ba; }
+    #main-menu > ListItem.--highlight { background: #315044; color: #e8fff0; text-style: bold; }
+    .form-panel { width: 1fr; padding: 1 2; border: round #315044; background: #151a18; margin: 0 1; }
     .detail-panel { color: #abd4c2; }
     .review-shell { align: center middle; }
     .review-card, .settings-card { width: 70%; padding: 2 3; border: double #32c98b; background: #0b2025; }
     .settings-card { width: 60%; }
-    .key-hint { color: #708c83; padding: 1 0; dock: bottom; }
+    .key-hint { color: #829188; padding: 1 0; dock: bottom; }
     .dashboard-shell { padding: 1 2; }
     .metric-row { height: 7; }
-    .metric { width: 1fr; margin: 1; padding: 1; text-align: center; color: #8de9c0; border: round #176657; background: #0a2020; text-style: bold; }
-    .metric-green { color: #55f2b0; border: round #2dd18c; }
+    .metric { width: 1fr; margin: 1; padding: 1; text-align: center; color: #9ac9a9; border: round #315044; background: #151a18; text-style: bold; }
+    .metric-green { color: #72d69b; border: round #477458; }
     #traffic { height: 10; margin: 1 0; color: #40e3a0; background: #091b20; }
     DataTable { height: 1fr; }
     RichLog { height: 1fr; border: round #164957; background: #061116; color: #9ef3c8; }
