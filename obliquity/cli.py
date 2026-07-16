@@ -378,39 +378,77 @@ def cmd_runs(args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="obliquity", description="Obliquity: staged pentest workflow orchestration")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    formatter = argparse.RawDescriptionHelpFormatter
+    p = argparse.ArgumentParser(
+        prog="obliquity",
+        formatter_class=formatter,
+        description=(
+            "Project-aware penetration testing orchestration for reusable gameplans,\n"
+            "staged feroxbuster execution, resume tracking, and organized results."
+        ),
+        epilog="""examples:
+  obliquity gameplans list --brief
+  obliquity project create acme
+  obliquity host add acme https://app.acme.test --profile generic
+  obliquity bust plan acme https://app.acme.test --gameplan generic-quick
+  obliquity bust run acme https://app.acme.test --gameplan generic-quick
+  obliquity bust resume acme https://app.acme.test --gameplan generic-quick
+  obliquity runs acme
+  obliquity report html acme
 
-    gameplans = sub.add_parser("gameplans")
+Run 'obliquity COMMAND --help' or 'obliquity COMMAND SUBCOMMAND --help'
+for detailed options and examples. Only test systems you are authorized to assess.""",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True, title="commands", metavar="COMMAND")
+
+    gameplans = sub.add_parser("gameplans", help="inspect built-in scan gameplans")
     gameplans_sub = gameplans.add_subparsers(dest="gameplans_cmd", required=True)
-    gl = gameplans_sub.add_parser("list")
+    gl = gameplans_sub.add_parser(
+        "list",
+        help="list available gameplans",
+        description="List built-in gameplans, their stages, wordlists, extensions, and estimates.",
+        epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list --brief",
+        formatter_class=formatter,
+    )
     gl.add_argument("--brief", action="store_true", help="show only names and summary fields")
     gl.set_defaults(func=cmd_gameplans_list)
 
-    project = sub.add_parser("project")
+    project = sub.add_parser("project", help="create and manage Obliquity projects")
     project_sub = project.add_subparsers(dest="project_cmd", required=True)
-    pc = project_sub.add_parser("create")
-    pc.add_argument("name")
+    pc = project_sub.add_parser(
+        "create",
+        help="create a project",
+        description="Create a project and its result directory under OBLIQUITY_HOME.",
+        epilog="example:\n  obliquity project create acme",
+        formatter_class=formatter,
+    )
+    pc.add_argument("name", help="unique project name")
     pc.set_defaults(func=cmd_project_create)
 
-    host = sub.add_parser("host")
+    host = sub.add_parser("host", help="add, inspect, update, or remove project hosts")
     host_sub = host.add_subparsers(dest="host_cmd", required=True)
-    ha = host_sub.add_parser("add")
-    ha.add_argument("project")
-    ha.add_argument("url")
-    ha.add_argument("--profile", default="generic")
-    ha.add_argument("--server")
-    ha.add_argument("--tech")
-    ha.add_argument("--notes")
+    ha = host_sub.add_parser(
+        "add", help="add a host", formatter_class=formatter,
+        epilog="example:\n  obliquity host add acme https://app.acme.test --profile php --server apache --tech php",
+    )
+    ha.add_argument("project", help="project name")
+    ha.add_argument("url", help="target base URL, including scheme")
+    ha.add_argument("--profile", default="generic", help="host profile (default: generic)")
+    ha.add_argument("--server", help="known web server, such as apache or iis")
+    ha.add_argument("--tech", help="known technology, such as php or aspnet")
+    ha.add_argument("--notes", help="free-form host notes")
     ha.set_defaults(func=cmd_host_add)
 
-    hl = host_sub.add_parser("list")
-    hl.add_argument("project")
+    hl = host_sub.add_parser("list", help="list project hosts", epilog="example:\n  obliquity host list acme", formatter_class=formatter)
+    hl.add_argument("project", help="project name")
     hl.set_defaults(func=cmd_host_list)
 
-    hu = host_sub.add_parser("update")
-    hu.add_argument("project")
-    hu.add_argument("url")
+    hu = host_sub.add_parser(
+        "update", help="update host metadata", formatter_class=formatter,
+        epilog='example:\n  obliquity host update acme https://app.acme.test --tech php --notes "Public app"',
+    )
+    hu.add_argument("project", help="project name")
+    hu.add_argument("url", help="current host URL")
     hu.add_argument("--url-new", help="new URL for this host")
     hu.add_argument("--profile")
     hu.add_argument("--server")
@@ -418,55 +456,76 @@ def build_parser() -> argparse.ArgumentParser:
     hu.add_argument("--notes")
     hu.set_defaults(func=cmd_host_update)
 
-    hr = host_sub.add_parser("remove")
-    hr.add_argument("project")
-    hr.add_argument("url")
+    hr = host_sub.add_parser("remove", help="remove a host and its database records", formatter_class=formatter, epilog="example:\n  obliquity host remove acme https://app.acme.test")
+    hr.add_argument("project", help="project name")
+    hr.add_argument("url", help="host URL")
     hr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
     hr.set_defaults(func=cmd_host_remove)
 
-    bust = sub.add_parser("bust")
+    bust = sub.add_parser("bust", help="plan, run, or resume staged content discovery")
     bust_sub = bust.add_subparsers(dest="bust_cmd", required=True)
 
-    bp = bust_sub.add_parser("plan")
-    bp.add_argument("project")
-    bp.add_argument("url")
-    bp.add_argument("--gameplan", default="generic-quick")
+    bp = bust_sub.add_parser(
+        "plan", help="preview stages without creating runs", formatter_class=formatter,
+        epilog="example:\n  obliquity bust plan acme https://app.acme.test --gameplan generic-quick",
+    )
+    bp.add_argument("project", help="project name")
+    bp.add_argument("url", help="host URL already added to the project")
+    bp.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     bp.set_defaults(func=cmd_bust_plan)
 
-    br = bust_sub.add_parser("run")
-    br.add_argument("project")
-    br.add_argument("url")
-    br.add_argument("--gameplan", default="generic-quick")
+    br = bust_sub.add_parser(
+        "run", help="execute a staged feroxbuster gameplan", formatter_class=formatter,
+        epilog="""examples:
+  obliquity bust run acme https://app.acme.test --gameplan generic-quick
+  obliquity bust run acme https://app.acme.test --gameplan php-standard --rate-limit 100
+  obliquity bust run acme https://app.acme.test --proxy http://127.0.0.1:8080 --header 'Cookie: session=value'
+  obliquity bust run acme https://app.acme.test --dry-run""",
+    )
+    br.add_argument("project", help="project name")
+    br.add_argument("url", help="host URL already added to the project")
+    br.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     br.add_argument("--force", action="store_true", help="rerun completed stages")
     br.add_argument("--dry-run", action="store_true", help="print commands without running the underlying tool")
-    br.add_argument("--rate-limit", type=int)
-    br.add_argument("--threads", type=int)
+    br.add_argument("--rate-limit", type=int, help="maximum requests per second")
+    br.add_argument("--threads", type=int, help="feroxbuster worker thread count")
     br.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
     br.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
     br.set_defaults(func=cmd_bust_run)
 
-    bres = bust_sub.add_parser("resume")
-    bres.add_argument("project")
-    bres.add_argument("url")
-    bres.add_argument("--gameplan", default="generic-quick")
+    bres = bust_sub.add_parser(
+        "resume", help="skip completed stages and retry interrupted or failed work",
+        description="Resume a gameplan by using stored stage fingerprints. Completed stages are skipped.",
+        formatter_class=formatter,
+        epilog="example:\n  obliquity bust resume acme https://app.acme.test --gameplan generic-quick",
+    )
+    bres.add_argument("project", help="project name")
+    bres.add_argument("url", help="host URL already added to the project")
+    bres.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     bres.set_defaults(force=False)
-    bres.add_argument("--dry-run", action="store_true")
-    bres.add_argument("--rate-limit", type=int)
-    bres.add_argument("--threads", type=int)
-    bres.add_argument("--proxy")
-    bres.add_argument("--header", action="append")
+    bres.add_argument("--dry-run", action="store_true", help="show pending commands without executing them")
+    bres.add_argument("--rate-limit", type=int, help="maximum requests per second")
+    bres.add_argument("--threads", type=int, help="feroxbuster worker thread count")
+    bres.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
+    bres.add_argument("--header", action="append", help="request header; repeatable")
     bres.set_defaults(func=cmd_bust_resume)
 
-    runs = sub.add_parser("runs")
-    runs.add_argument("project")
-    runs.add_argument("--status")
+    runs = sub.add_parser(
+        "runs", help="show stored stage runs", formatter_class=formatter,
+        epilog="examples:\n  obliquity runs acme\n  obliquity runs acme --status interrupted",
+    )
+    runs.add_argument("project", help="project name")
+    runs.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
     runs.set_defaults(func=cmd_runs)
 
-    report = sub.add_parser("report")
+    report = sub.add_parser("report", help="generate project reports")
     report_sub = report.add_subparsers(dest="report_cmd", required=True)
-    rh = report_sub.add_parser("html")
-    rh.add_argument("project")
-    rh.add_argument("--output")
+    rh = report_sub.add_parser(
+        "html", help="generate an HTML report", formatter_class=formatter,
+        epilog="examples:\n  obliquity report html acme\n  obliquity report html acme --output ./acme-report.html",
+    )
+    rh.add_argument("project", help="project name")
+    rh.add_argument("--output", help="custom report path")
     rh.set_defaults(func=cmd_report_html)
 
     return p
