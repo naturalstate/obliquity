@@ -187,6 +187,9 @@ The repository includes a standalone fake-data terminal UI playground. It does n
 ```bash
 python -m pip install -r requirements-tui-demo.txt
 python -m obliquity.tui_demo
+
+# Minimal terminal-style experiment
+python -m obliquity.tui_terminal_demo
 ```
 
 Use arrow keys, Enter, Tab, Space, Escape, and the letter shortcuts to explore workflow screens, settings, review pages, a live dashboard, tables, sparklines, and a simulated terminal stream.
