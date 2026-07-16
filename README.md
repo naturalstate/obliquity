@@ -190,6 +190,9 @@ python -m obliquity.tui_demo
 
 # Minimal terminal-style experiment
 python -m obliquity.tui_terminal_demo
+
+# Posting-inspired keyboard UI experiment
+python -m obliquity.tui_posting_demo
 ```
 
 Use arrow keys, Enter, Tab, Space, Escape, and the letter shortcuts to explore workflow screens, settings, review pages, a live dashboard, tables, sparklines, and a simulated terminal stream.
