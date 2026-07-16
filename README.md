@@ -180,6 +180,17 @@ obliquity doctor
 
 Feroxbuster, ffuf, and hashcat are core tool recommendations. Missing tools produce warnings, but Obliquity remains installable and each operation checks for its own executable when run. Gobuster, wfuzz, and John are optional adapters for future expansion.
 
+## Textual UI demo
+
+The repository includes a standalone fake-data terminal UI playground. It does not run tools or write the Obliquity database. Install its optional dependency and launch it with:
+
+```bash
+python -m pip install -r requirements-tui-demo.txt
+python -m obliquity.tui_demo
+```
+
+Use arrow keys, Enter, Tab, Space, Escape, and the letter shortcuts to explore workflow screens, settings, review pages, a live dashboard, tables, sparklines, and a simulated terminal stream.
+
 ## Built-in gameplans
 
 - `generic-quick`
