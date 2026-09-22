@@ -429,9 +429,7 @@ def _fuzz_url_template(host_url: str, plan, args) -> tuple[str | None, str | Non
 def cmd_fuzz_run(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
-    host = get_host(conn, project["id"], args.url)
-    if host is None:
-        die(f"host not found in project: {args.url}. Add it first with: obliquity host add")
+    host = require_host(conn, project, args.url)
     plan = resolve_fuzz_plan(args.gameplan)
     url_template, request_file = _fuzz_url_template(host["url"], plan, args)
     mode = "Plan" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
@@ -620,7 +618,37 @@ def build_parser() -> argparse.ArgumentParser:
 Run 'obliquity COMMAND --help' or 'obliquity COMMAND SUBCOMMAND --help'
 for detailed options and examples. Only test systems you are authorized to assess.""",
     )
-    sub = p.add_subparsers(dest="cmd", required=True, title="commands", metavar="COMMAND")
+    sub = p.add_subparsers(dest="cmd", required=False, title="commands", metavar="COMMAND")
+
+    # Shared by every `bust`/`fuzz` run|resume|plan subcommand so `run` and `resume`
+    # can never drift apart the way they did before (see git history).
+    project_host_args = argparse.ArgumentParser(add_help=False)
+    project_host_args.add_argument("project", help="project name")
+    project_host_args.add_argument(
+        "url", nargs="?",
+        help="host URL or host name already added to the project (optional if the project has exactly one host)",
+    )
+
+    fuzz_scan_args = argparse.ArgumentParser(add_help=False)
+    fuzz_scan_args.add_argument("--gameplan", default="parameter-names-quick", help="ffuf gameplan name")
+    fuzz_scan_args.add_argument("--wordlist", help="override the gameplan wordlist")
+    fuzz_scan_args.add_argument("--endpoint", help="path for parameter-name fuzzing")
+    fuzz_scan_args.add_argument("--template", help="URL template containing FUZZ")
+    fuzz_scan_args.add_argument("--test-value", default="test", help="fixed parameter value")
+    fuzz_scan_args.add_argument("--request", help="raw HTTP request file")
+    fuzz_scan_args.add_argument("--request-proto", default="https", help="protocol for raw requests")
+    fuzz_scan_args.add_argument("--match-codes", help="ffuf match status codes")
+    fuzz_scan_args.add_argument("--filter-codes", help="ffuf filter status codes")
+    fuzz_scan_args.add_argument("--filter-size", help="ffuf filter response sizes")
+    fuzz_scan_args.add_argument("--report", action="store_true", help="generate HTML report after success")
+    fuzz_scan_args.add_argument("--open-report", action="store_true", help="generate and open HTML report after success")
+    fuzz_scan_args.add_argument("--header", action="append", help="header; repeatable")
+    fuzz_scan_args.add_argument("--method", help="HTTP method")
+    fuzz_scan_args.add_argument("--data", help="request body, including FUZZ")
+    fuzz_scan_args.add_argument("--proxy", help="HTTP/SOCKS proxy")
+    fuzz_scan_args.add_argument("--threads", type=int, help="ffuf worker count")
+    fuzz_scan_args.add_argument("--rate", type=int, help="requests per second")
+    fuzz_scan_args.add_argument("--dry-run", action="store_true", help="show command without executing ffuf")
 
     doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
     doctor.set_defaults(func=cmd_doctor)
@@ -633,56 +661,16 @@ for detailed options and examples. Only test systems you are authorized to asses
     fl = fuzz_sub.add_parser("list", help="list ffuf gameplans", formatter_class=formatter)
     fl.add_argument("--brief", action="store_true")
     fl.set_defaults(func=cmd_gameplans_list)
-    fr = fuzz_sub.add_parser("run", help="execute an ffuf gameplan", formatter_class=formatter)
-    fr.add_argument("project", help="project name")
-    fr.add_argument("url", help="host URL already added to the project")
-    fr.add_argument("--gameplan", default="parameter-names-quick", help="ffuf gameplan name")
-    fr.add_argument("--wordlist", help="override the gameplan wordlist")
-    fr.add_argument("--endpoint", help="path for parameter-name fuzzing")
-    fr.add_argument("--template", help="URL template containing FUZZ")
-    fr.add_argument("--test-value", default="test", help="fixed parameter value")
-    fr.add_argument("--request", help="raw HTTP request file")
-    fr.add_argument("--request-proto", default="https", help="protocol for raw requests")
-    fr.add_argument("--match-codes", help="ffuf match status codes")
-    fr.add_argument("--filter-codes", help="ffuf filter status codes")
-    fr.add_argument("--filter-size", help="ffuf filter response sizes")
+    fr = fuzz_sub.add_parser(
+        "run", help="execute an ffuf gameplan", formatter_class=formatter,
+        parents=[project_host_args, fuzz_scan_args],
+    )
     fr.add_argument("--force", action="store_true", help="rerun equivalent completed coverage")
-    fr.add_argument("--report", action="store_true", help="generate HTML report after success")
-    fr.add_argument("--open-report", action="store_true", help="generate and open HTML report after success")
-    fr.add_argument("--header", action="append", help="header; repeatable")
-    fr.add_argument("--method", help="HTTP method")
-    fr.add_argument("--data", help="request body, including FUZZ")
-    fr.add_argument("--proxy", help="HTTP/SOCKS proxy")
-    fr.add_argument("--threads", type=int, help="ffuf worker count")
-    fr.add_argument("--rate", type=int, help="requests per second")
-    fr.add_argument("--dry-run", action="store_true", help="show command without executing ffuf")
     fr.set_defaults(func=cmd_fuzz_run)
-    fres = fuzz_sub.add_parser("resume", help="resume an ffuf gameplan", formatter_class=formatter)
-    for action in fr._actions[1:]:
-        if action.dest in {"help", "project", "url"}:
-            continue
-        # Copying argparse actions is unsafe; define resume through the same parser arguments below.
-    fres.add_argument("project")
-    fres.add_argument("url")
-    fres.add_argument("--gameplan", default="parameter-names-quick")
-    fres.add_argument("--wordlist")
-    fres.add_argument("--endpoint")
-    fres.add_argument("--template")
-    fres.add_argument("--test-value", default="test")
-    fres.add_argument("--request")
-    fres.add_argument("--request-proto", default="https")
-    fres.add_argument("--match-codes")
-    fres.add_argument("--filter-codes")
-    fres.add_argument("--filter-size")
-    fres.add_argument("--header", action="append")
-    fres.add_argument("--method")
-    fres.add_argument("--data")
-    fres.add_argument("--proxy")
-    fres.add_argument("--rate", type=int)
-    fres.add_argument("--threads", type=int)
-    fres.add_argument("--dry-run", action="store_true")
-    fres.add_argument("--report", action="store_true")
-    fres.add_argument("--open-report", action="store_true")
+    fres = fuzz_sub.add_parser(
+        "resume", help="resume an ffuf gameplan", formatter_class=formatter,
+        parents=[project_host_args, fuzz_scan_args],
+    )
     fres.set_defaults(func=cmd_fuzz_resume)
 
     coverage = sub.add_parser("coverage", help="show operation coverage by host and tool")
@@ -762,54 +750,47 @@ for detailed options and examples. Only test systems you are authorized to asses
     hr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
     hr.set_defaults(func=cmd_host_remove)
 
+    bust_scan_args = argparse.ArgumentParser(add_help=False)
+    bust_scan_args.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
+    bust_scan_args.add_argument("--dry-run", action="store_true", help="print commands without running the underlying tool")
+    bust_scan_args.add_argument("--rate-limit", type=int, help="maximum requests per second")
+    bust_scan_args.add_argument("--threads", type=int, help="feroxbuster worker thread count")
+    bust_scan_args.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
+    bust_scan_args.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
+    bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
+    bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
+
     bust = sub.add_parser("bust", help="plan, run, or resume staged content discovery")
     bust_sub = bust.add_subparsers(dest="bust_cmd", required=True)
 
     bp = bust_sub.add_parser(
         "plan", help="preview stages without creating runs", formatter_class=formatter,
+        parents=[project_host_args],
         epilog="example:\n  obliquity bust plan acme https://app.acme.test --gameplan generic-quick",
     )
-    bp.add_argument("project", help="project name")
-    bp.add_argument("url", nargs="?", help="host URL already added to the project (optional if the project has exactly one host)")
     bp.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     bp.set_defaults(func=cmd_bust_plan)
 
     br = bust_sub.add_parser(
         "run", help="execute a staged feroxbuster gameplan", formatter_class=formatter,
+        parents=[project_host_args, bust_scan_args],
         epilog="""examples:
   obliquity bust run acme https://app.acme.test --gameplan generic-quick
   obliquity bust run acme https://app.acme.test --gameplan php-standard --rate-limit 100
   obliquity bust run acme https://app.acme.test --proxy http://127.0.0.1:8080 --header 'Cookie: session=value'
   obliquity bust run acme https://app.acme.test --dry-run""",
     )
-    br.add_argument("project", help="project name")
-    br.add_argument("url", nargs="?", help="host URL already added to the project (optional if the project has exactly one host)")
-    br.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     br.add_argument("--force", action="store_true", help="rerun completed stages")
-    br.add_argument("--dry-run", action="store_true", help="print commands without running the underlying tool")
-    br.add_argument("--rate-limit", type=int, help="maximum requests per second")
-    br.add_argument("--threads", type=int, help="feroxbuster worker thread count")
-    br.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
-    br.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
-    br.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
-    br.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
     br.set_defaults(func=cmd_bust_run)
 
     bres = bust_sub.add_parser(
         "resume", help="skip completed stages and retry interrupted or failed work",
         description="Resume a gameplan by using stored stage fingerprints. Completed stages are skipped.",
         formatter_class=formatter,
+        parents=[project_host_args, bust_scan_args],
         epilog="example:\n  obliquity bust resume acme https://app.acme.test --gameplan generic-quick",
     )
-    bres.add_argument("project", help="project name")
-    bres.add_argument("url", nargs="?", help="host URL already added to the project (optional if the project has exactly one host)")
-    bres.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
     bres.set_defaults(force=False)
-    bres.add_argument("--dry-run", action="store_true", help="show pending commands without executing them")
-    bres.add_argument("--rate-limit", type=int, help="maximum requests per second")
-    bres.add_argument("--threads", type=int, help="feroxbuster worker thread count")
-    bres.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
-    bres.add_argument("--header", action="append", help="request header; repeatable")
     bres.set_defaults(func=cmd_bust_resume)
 
     runs = sub.add_parser(
@@ -836,7 +817,11 @@ for detailed options and examples. Only test systems you are authorized to asses
 
 def main(argv: list[str] | None = None) -> None:
     print_banner()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.cmd is None:
+        parser.print_help()
+        return
     args.func(args)
 
 
