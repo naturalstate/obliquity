@@ -1,0 +1,25 @@
+{
+  "name": "standard",
+  "description": "Staged hash cracking: plain rockyou, then rockyou with best64 rules, then a common mask fallback for policy-shaped passwords (e.g. Capital + word + 2 digits).",
+  "stages": [
+    {
+      "name": "rockyou-plain",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "estimated_minutes": 10
+    },
+    {
+      "name": "rockyou-best64",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "rules": "/usr/share/hashcat/rules/best64.rule",
+      "estimated_minutes": 30
+    },
+    {
+      "name": "policy-mask",
+      "attack_mode": "mask",
+      "mask": "?u?l?l?l?l?l?d?d",
+      "estimated_minutes": 45
+    }
+  ]
+}

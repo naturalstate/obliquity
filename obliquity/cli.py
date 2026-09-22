@@ -21,17 +21,25 @@ from obliquity.core.console import (
     subsection,
     supports_color,
 )
+from obliquity.core.crack_runner import preview_plan as preview_crackplan, run_crackplan
+from obliquity.core.crackplan import find_builtin_crackplan, list_builtin_crackplans, load_crackplan
 from obliquity.core.database import (
+    add_crack_job,
     add_host,
     connect,
     create_project,
+    delete_crack_job,
     delete_host,
     delete_project,
     get_coverage,
+    get_crack_job,
+    get_crack_runs,
+    get_cracked_hashes,
     get_findings,
     get_host,
     get_project,
     get_runs,
+    list_crack_jobs,
     list_hosts,
     update_host,
 )
@@ -80,6 +88,13 @@ def resolve_fuzz_plan(name_or_path: str):
     return load_fuzz_plan(find_fuzz_plan(name_or_path))
 
 
+def resolve_crackplan(name_or_path: str):
+    path = Path(name_or_path)
+    if path.exists():
+        return load_crackplan(path)
+    return load_crackplan(find_builtin_crackplan(name_or_path))
+
+
 def require_project(conn, name: str):
     project = get_project(conn, name)
     if project is None:
@@ -101,6 +116,22 @@ def require_host(conn, project: dict, url: str | None):
         options = ", ".join(h["url"] for h in hosts)
         die(f"project '{project['name']}' has multiple hosts; specify one: {options}")
     return hosts[0]
+
+
+def require_job(conn, project: dict, target: str | None):
+    if target:
+        job = get_crack_job(conn, project["id"], target)
+        if job is None:
+            die(f"crack job not found in project: {target}. Add it first with: obliquity crack job add {project['name']} <hashfile>")
+        return job
+
+    jobs = list_crack_jobs(conn, project["id"])
+    if not jobs:
+        die(f"project '{project['name']}' has no crack jobs yet. Add one with: obliquity crack job add {project['name']} <hashfile> --hash-type <mode>")
+    if len(jobs) > 1:
+        options = ", ".join(j["name"] or j["hash_file"] for j in jobs)
+        die(f"project '{project['name']}' has multiple crack jobs; specify one: {options}")
+    return jobs[0]
 
 
 def fmt_list(values: list[str] | list[int] | tuple | None, empty: str = "none") -> str:
@@ -221,6 +252,94 @@ def print_run_event(event: dict) -> None:
         return
 
 
+def print_crack_stage_summary(row: dict) -> None:
+    subsection(f"Stage {row['number']}: {row['name']}", "magenta")
+    bullet("Attack mode", row["attack_mode"])
+    if row["attack_mode"] == "dictionary":
+        bullet("Wordlist", row["wordlist"])
+        if row.get("rules"):
+            bullet("Rules", row["rules"])
+    elif row["attack_mode"] == "mask":
+        bullet("Mask", row["mask"])
+    bullet("Estimated time", fmt_estimate(row.get("estimated_minutes")))
+
+
+def print_crackplan_summary(project: dict, job: dict, crackplan, *, mode: str, args) -> None:
+    section(f"Obliquity Crack: {mode}", "cyan")
+    kv("Project", project["name"])
+    kv("Job", job["name"] or job["hash_file"])
+    kv("Hash file", job["hash_file"])
+    kv("Hash type (-m)", job["hash_type"])
+    kv("Selected crackplan", crackplan.name)
+    if crackplan.description:
+        kv("Description", crackplan.description)
+    kv("Stages", len(crackplan.stages))
+    estimates = [stage.estimated_minutes for stage in crackplan.stages]
+    kv("Estimated completion", "unknown in MVP" if any(v is None for v in estimates) else fmt_estimate(sum(estimates)))
+    kv("Output root", Path(project["root_dir"]) / "runs" / "crack")
+
+    option_bits = []
+    if getattr(args, "force", False):
+        option_bits.append("force-rerun=true")
+    kv("Run options", ", ".join(option_bits) if option_bits else "default")
+
+    section("Stages queued", "blue")
+    for row in preview_crackplan(crackplan):
+        print_crack_stage_summary(row)
+
+
+def print_crack_event(event: dict) -> None:
+    action = event.get("action")
+    stage_label = f"Stage {event.get('stage_number')}/{event.get('total_stages')}: {event.get('stage')}"
+
+    if action == "skipped":
+        subsection(f"Skipped {stage_label}", "yellow")
+        bullet("Reason", event.get("reason", "already completed"), color="yellow")
+        return
+
+    if action == "planned":
+        subsection(f"Planned {stage_label}", "magenta")
+        bullet("Attack mode", event.get("attack_mode"))
+        bullet("Wordlist", event.get("wordlist") or "-")
+        bullet("Rules", event.get("rules") or "-")
+        bullet("Mask", event.get("mask") or "-")
+        bullet("Cracked output", event.get("result_output"))
+        command_block(event.get("command", ""))
+        return
+
+    if action == "starting":
+        subsection(f"Running {stage_label}", "green")
+        bullet("Attack mode", event.get("attack_mode"))
+        bullet("Wordlist", event.get("wordlist") or "-")
+        bullet("Rules", event.get("rules") or "-")
+        bullet("Mask", event.get("mask") or "-")
+        bullet("Raw output", event.get("raw_output"))
+        bullet("Cracked output", event.get("result_output"))
+        command_block(event.get("command", ""))
+        print(c("This stage is running now. hashcat exiting with 'exhausted' (no hashes left to try) is normal, not a failure.", "gray"))
+        return
+
+    if action == "progress":
+        if supports_color():
+            print(f"\r{live_progress_line(event)}", end="", flush=True)
+        return
+
+    if action == "ran":
+        if supports_color():
+            print("\r" + " " * 120 + "\r", end="", flush=True)
+        status = event.get("status", "unknown")
+        color = "green" if status == "completed" else "yellow" if status == "interrupted" else "red"
+        subsection(f"Finished {stage_label}", color)
+        bullet("Status", status, color=color)
+        bullet("Exit code", event.get("exit_code"), color=color)
+        bullet("Newly cracked", event.get("new_findings"), color=color)
+        bullet("Raw output", event.get("raw_output"))
+        bullet("Cracked output", event.get("result_output"))
+        if event.get("error"):
+            bullet("Error", event["error"], color=color)
+        return
+
+
 def cmd_project_create(args) -> None:
     conn = connect(DB_PATH)
     root = PROJECTS_DIR / args.name
@@ -332,6 +451,54 @@ def cmd_host_remove(args) -> None:
     kv("URL", args.url)
 
 
+def cmd_crack_job_add(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    hash_file = str(Path(args.hashfile).expanduser().resolve())
+    if not Path(hash_file).exists():
+        die(f"hash file not found: {hash_file}")
+    job = add_crack_job(conn, project["id"], hash_file, args.hash_type, args.name, args.notes)
+    section("Crack job added", "green")
+    kv("Project", project["name"])
+    kv("Job", job["name"] or "-")
+    kv("Hash file", job["hash_file"])
+    kv("Hash type (-m)", job["hash_type"])
+
+
+def cmd_crack_job_list(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    jobs = list_crack_jobs(conn, project["id"])
+    section(f"Crack jobs: {project['name']}", "cyan")
+    if not jobs:
+        print("No crack jobs added yet.")
+        return
+    for job in jobs:
+        subsection(job["name"] or job["hash_file"], "magenta")
+        bullet("Hash file", job["hash_file"])
+        bullet("Hash type (-m)", job["hash_type"])
+        if job["notes"]:
+            bullet("Notes", job["notes"])
+
+
+def cmd_crack_job_remove(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    if not args.yes:
+        section("Confirm crack job removal", "yellow")
+        kv("Project", project["name"], color="yellow")
+        kv("Target", args.target, color="yellow")
+        print(c("This will remove the crack job and related run/cracked-hash records from the database.", "yellow"))
+        print(c("Re-run with --yes to confirm.", "yellow", bold=True))
+        return
+    removed = delete_crack_job(conn, project["id"], args.target)
+    if not removed:
+        die(f"crack job not found in project: {args.target}")
+    section("Crack job removed", "green")
+    kv("Project", project["name"])
+    kv("Target", args.target)
+
+
 def cmd_gameplans_list(args) -> None:
     section("Available gameplans", "cyan")
     for path in list_builtin_gameplans():
@@ -359,6 +526,26 @@ def cmd_gameplans_list(args) -> None:
         if not args.brief:
             bullet("Wordlist", plan.wordlist)
             bullet("Autocalibration", "yes" if plan.autocalibrate else "no")
+
+    section("Hashcat crack gameplans", "cyan")
+    for path in list_builtin_crackplans():
+        crackplan = resolve_crackplan(str(path))
+        subsection(crackplan.name, "magenta")
+        if crackplan.description:
+            bullet("Description", crackplan.description)
+        bullet("Stages", len(crackplan.stages))
+        bullet("Tool", "hashcat")
+        if not args.brief:
+            for row in preview_crackplan(crackplan):
+                print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
+                print(f"     {c('Attack mode:', 'cyan', bold=True)} {row['attack_mode']}")
+                if row["attack_mode"] == "dictionary":
+                    print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
+                    if row.get("rules"):
+                        print(f"     {c('Rules:', 'cyan', bold=True)} {row['rules']}")
+                elif row["attack_mode"] == "mask":
+                    print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
+            blank()
 
 
 def cmd_doctor(args) -> None:
@@ -547,11 +734,71 @@ def cmd_bust_resume(args) -> None:
     cmd_bust_run(args)
 
 
+def cmd_crack_plan(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    job = require_job(conn, project, args.job)
+    crackplan = resolve_crackplan(args.gameplan)
+    print_crackplan_summary(project, job, crackplan, mode="Plan Preview", args=args)
+
+
+def cmd_crack_run(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    job = require_job(conn, project, args.job)
+    crackplan = resolve_crackplan(args.gameplan)
+
+    mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
+    print_crackplan_summary(project, job, crackplan, mode=mode, args=args)
+
+    section("Execution", "cyan")
+    results = run_crackplan(
+        conn,
+        project,
+        job,
+        crackplan,
+        force=args.force,
+        dry_run=args.dry_run,
+        event_callback=print_crack_event,
+    )
+
+    completed = sum(1 for item in results if item.get("status") == "completed")
+    skipped = sum(1 for item in results if item.get("action") == "skipped")
+    planned = sum(1 for item in results if item.get("action") == "planned")
+    failed = sum(1 for item in results if item.get("status") == "failed")
+    interrupted = sum(1 for item in results if item.get("status") == "interrupted")
+    cracked = sum(int(item.get("new_findings") or 0) for item in results)
+
+    summary_color = "red" if failed else "yellow" if interrupted else "green"
+    section("Run summary", summary_color)
+    kv("Completed stages", completed, color="green")
+    kv("Skipped stages", skipped, color="yellow")
+    kv("Planned stages", planned, color="magenta")
+    kv("Failed stages", failed, color="red" if failed else "green")
+    kv("Interrupted stages", interrupted, color="yellow" if interrupted else "green")
+    kv("Newly cracked", cracked)
+    kv("Report command", f"obliquity report html {project['name']}")
+
+    if not args.dry_run and not failed and not interrupted and (
+        getattr(args, "report", False) or getattr(args, "open_report", False)
+    ):
+        output = write_html_report(conn, project)
+        if getattr(args, "open_report", False):
+            open_html_report(output)
+
+
+def cmd_crack_resume(args) -> None:
+    args.resume = True
+    cmd_crack_run(args)
+
+
 def write_html_report(conn, project, output: Path | None = None) -> Path:
     runs = get_runs(conn, project["id"])
     findings = get_findings(conn, project["id"])
+    crack_runs = get_crack_runs(conn, project["id"])
+    cracked_hashes = get_cracked_hashes(conn, project["id"])
     output = output or Path(project["root_dir"]) / "report.html"
-    generate_html(project, runs, findings, output)
+    generate_html(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
     section("HTML report", "green")
     kv("Report written", output)
     return output
@@ -598,7 +845,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=formatter,
         description=(
             "Project-aware penetration testing orchestration for reusable gameplans,\n"
-            "staged feroxbuster execution, resume tracking, and organized results."
+            "staged bust (feroxbuster), fuzz (ffuf), and crack (hashcat) execution,\n"
+            "resume tracking, and organized results."
         ),
         epilog="""examples:
   obliquity gameplans list --brief
@@ -612,6 +860,9 @@ def build_parser() -> argparse.ArgumentParser:
   obliquity bust run acme https://app.acme.test --gameplan generic-quick
   obliquity bust run acme https://app.acme.test --gameplan smoke-test --open-report
   obliquity bust resume acme https://app.acme.test --gameplan generic-quick
+  obliquity crack job add acme ./hashes.txt --hash-type 1000 --name ntlm-dump
+  obliquity crack run acme --gameplan quick-dictionary --open-report
+  obliquity crack resume acme --gameplan standard
   obliquity runs acme
   obliquity report html acme
 
@@ -792,6 +1043,83 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
     bres.set_defaults(force=False)
     bres.set_defaults(func=cmd_bust_resume)
+
+    crack_target_args = argparse.ArgumentParser(add_help=False)
+    crack_target_args.add_argument("project", help="project name")
+    crack_target_args.add_argument(
+        "job", nargs="?",
+        help="crack job name or hash file already added to the project (optional if the project has exactly one job)",
+    )
+
+    crack_scan_args = argparse.ArgumentParser(add_help=False)
+    crack_scan_args.add_argument("--gameplan", default="quick-dictionary", help="built-in name or JSON path (default: quick-dictionary)")
+    crack_scan_args.add_argument("--dry-run", action="store_true", help="print commands without running hashcat")
+    crack_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
+    crack_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
+
+    crack = sub.add_parser(
+        "crack", help="plan, run, or resume staged hashcat cracking", formatter_class=formatter,
+        epilog="""examples:
+  obliquity crack job add acme ./hashes.txt --hash-type 1000 --name ntlm-dump
+  obliquity crack plan acme --gameplan quick-dictionary
+  obliquity crack run acme --gameplan quick-dictionary
+  obliquity crack run acme ntlm-dump --gameplan standard --open-report
+  obliquity crack resume acme --gameplan standard""",
+    )
+    crack_sub = crack.add_subparsers(dest="crack_cmd", required=True)
+
+    crack_job = crack_sub.add_parser("job", help="add, list, or remove crack targets (hash files)")
+    crack_job_sub = crack_job.add_subparsers(dest="crack_job_cmd", required=True)
+
+    cja = crack_job_sub.add_parser(
+        "add", help="add a hash file as a crack job", formatter_class=formatter,
+        epilog="example:\n  obliquity crack job add acme ./hashes.txt --hash-type 1000 --name ntlm-dump",
+    )
+    cja.add_argument("project", help="project name")
+    cja.add_argument("hashfile", help="path to a hashcat-compatible hash file")
+    cja.add_argument("--hash-type", type=int, required=True, help="hashcat -m mode number, e.g. 0=MD5, 1000=NTLM")
+    cja.add_argument("--name", help="friendly name to refer to this job later")
+    cja.add_argument("--notes", help="free-form job notes")
+    cja.set_defaults(func=cmd_crack_job_add)
+
+    cjl = crack_job_sub.add_parser("list", help="list project crack jobs", epilog="example:\n  obliquity crack job list acme", formatter_class=formatter)
+    cjl.add_argument("project", help="project name")
+    cjl.set_defaults(func=cmd_crack_job_list)
+
+    cjr = crack_job_sub.add_parser("remove", help="remove a crack job and its records", formatter_class=formatter, epilog="example:\n  obliquity crack job remove acme ntlm-dump")
+    cjr.add_argument("project", help="project name")
+    cjr.add_argument("target", help="job name or hash file path")
+    cjr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
+    cjr.set_defaults(func=cmd_crack_job_remove)
+
+    cp = crack_sub.add_parser(
+        "plan", help="preview stages without creating runs", formatter_class=formatter,
+        parents=[crack_target_args],
+        epilog="example:\n  obliquity crack plan acme --gameplan quick-dictionary",
+    )
+    cp.add_argument("--gameplan", default="quick-dictionary", help="built-in name or JSON path (default: quick-dictionary)")
+    cp.set_defaults(func=cmd_crack_plan)
+
+    cr = crack_sub.add_parser(
+        "run", help="execute a staged hashcat crackplan", formatter_class=formatter,
+        parents=[crack_target_args, crack_scan_args],
+        epilog="""examples:
+  obliquity crack run acme --gameplan quick-dictionary
+  obliquity crack run acme ntlm-dump --gameplan standard --open-report
+  obliquity crack run acme --dry-run""",
+    )
+    cr.add_argument("--force", action="store_true", help="rerun completed stages")
+    cr.set_defaults(func=cmd_crack_run)
+
+    cres = crack_sub.add_parser(
+        "resume", help="skip completed stages and retry interrupted or failed work",
+        description="Resume a crackplan by using stored stage fingerprints. Completed stages are skipped.",
+        formatter_class=formatter,
+        parents=[crack_target_args, crack_scan_args],
+        epilog="example:\n  obliquity crack resume acme --gameplan standard",
+    )
+    cres.set_defaults(force=False)
+    cres.set_defaults(func=cmd_crack_resume)
 
     runs = sub.add_parser(
         "runs", help="show stored stage runs", formatter_class=formatter,

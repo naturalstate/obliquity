@@ -1,0 +1,12 @@
+{
+  "name": "quick-dictionary",
+  "description": "Single-pass dictionary attack against rockyou. Fast first attempt before layering rules or masks.",
+  "stages": [
+    {
+      "name": "rockyou",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "estimated_minutes": 10
+    }
+  ]
+}

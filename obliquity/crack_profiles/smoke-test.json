@@ -1,0 +1,12 @@
+{
+  "name": "smoke-test",
+  "description": "Tiny single-stage dictionary attack for verifying Obliquity's hashcat integration end to end, using a bundled wordlist. Not for real engagements.",
+  "stages": [
+    {
+      "name": "bundled-dictionary",
+      "attack_mode": "dictionary",
+      "wordlist": "smoke-test-wordlist.txt",
+      "estimated_minutes": 1
+    }
+  ]
+}

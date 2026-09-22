@@ -22,8 +22,17 @@ def _esc(value) -> str:
     return html.escape(str(value), quote=True)
 
 
-def generate_html(project: Row, runs: list[Row], findings: list[Row], output_path: Path) -> Path:
+def generate_html(
+    project: Row,
+    runs: list[Row],
+    findings: list[Row],
+    output_path: Path,
+    crack_runs: list[Row] | None = None,
+    cracked_hashes: list[Row] | None = None,
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    crack_runs = crack_runs or []
+    cracked_hashes = cracked_hashes or []
 
     status_counts = Counter(f["status_code"] for f in findings)
     host_counts = Counter(f["host_url"] for f in findings)
@@ -36,7 +45,35 @@ def generate_html(project: Row, runs: list[Row], findings: list[Row], output_pat
             ("runs", len(runs)),
             ("completed", sum(1 for r in runs if r["status"] == "completed")),
             ("failed", sum(1 for r in runs if r["status"] == "failed")),
+            ("cracked hashes", len(cracked_hashes)),
+            ("crack runs", len(crack_runs)),
         ]
+    )
+
+    crack_run_rows = "".join(
+        f"""
+        <tr>
+          <td>{_esc(r['stage_name'])}</td>
+          <td>{_esc(r['crackplan_name'])}</td>
+          <td>{_esc(r['status'])}</td>
+          <td>{_esc(r['exit_code'])}</td>
+          <td><code>{_esc(r['command'])}</code></td>
+        </tr>
+        """
+        for r in crack_runs
+    )
+
+    cracked_hash_rows = "".join(
+        f"""
+        <tr>
+          <td>{_esc(c['job_name'] or c['hash_file'])}</td>
+          <td><code>{_esc(c['hash'])}</code></td>
+          <td><code>{_esc(c['plaintext'])}</code></td>
+          <td>{_esc(c['stage_name'])}</td>
+          <td>{_esc(c['crackplan_name'])}</td>
+        </tr>
+        """
+        for c in cracked_hashes
     )
 
     status_rows = "".join(
@@ -125,7 +162,7 @@ def generate_html(project: Row, runs: list[Row], findings: list[Row], output_pat
 <body>
 <header>
   <pre class="banner">{_esc(REPORT_BANNER)}</pre>
-  <h1>Obliquity Bust Report</h1>
+  <h1>Obliquity Report</h1>
   <div class="muted">Project: {_esc(project['name'])}</div>
 </header>
 <main>
@@ -156,6 +193,18 @@ def generate_html(project: Row, runs: list[Row], findings: list[Row], output_pat
   <table>
     <thead><tr><th>Stage</th><th>Gameplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
     <tbody>{run_rows}</tbody>
+  </table>
+
+  <h2>Cracked Hashes</h2>
+  <table>
+    <thead><tr><th>Job</th><th>Hash</th><th>Plaintext</th><th>Stage</th><th>Crackplan</th></tr></thead>
+    <tbody>{cracked_hash_rows}</tbody>
+  </table>
+
+  <h2>Crack Runs</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Crackplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
+    <tbody>{crack_run_rows}</tbody>
   </table>
 </main>
 </body>

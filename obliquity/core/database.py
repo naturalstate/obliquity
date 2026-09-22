@@ -65,6 +65,53 @@ CREATE TABLE IF NOT EXISTS findings (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS crack_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name TEXT,
+    hash_file TEXT NOT NULL,
+    hash_type INTEGER NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, hash_file),
+    UNIQUE(project_id, name),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS crack_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    crackplan_name TEXT NOT NULL,
+    stage_name TEXT NOT NULL,
+    fingerprint TEXT NOT NULL UNIQUE,
+    command TEXT NOT NULL,
+    raw_output_path TEXT,
+    result_output_path TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at TEXT,
+    finished_at TEXT,
+    exit_code INTEGER,
+    error TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(job_id) REFERENCES crack_jobs(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cracked_hashes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    project_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    hash TEXT NOT NULL,
+    plaintext TEXT NOT NULL,
+    source TEXT,
+    cracked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, job_id, hash),
+    FOREIGN KEY(run_id) REFERENCES crack_runs(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(job_id) REFERENCES crack_jobs(id) ON DELETE CASCADE
+);
 """
 
 
@@ -313,3 +360,154 @@ def get_coverage(conn: sqlite3.Connection, project_id: int, host_id: int | None 
         params.append(host_id)
     sql += " ORDER BY h.url, r.operation_category, r.id"
     return list(conn.execute(sql, params))
+
+
+def add_crack_job(
+    conn: sqlite3.Connection,
+    project_id: int,
+    hash_file: str,
+    hash_type: int,
+    name: str | None = None,
+    notes: str | None = None,
+) -> sqlite3.Row:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO crack_jobs(project_id, hash_file, hash_type, name, notes)
+        VALUES(?, ?, ?, ?, ?)
+        """,
+        (project_id, hash_file, hash_type, name, notes),
+    )
+    conn.commit()
+    job = conn.execute(
+        "SELECT * FROM crack_jobs WHERE project_id = ? AND hash_file = ?", (project_id, hash_file)
+    ).fetchone()
+    if job is None:
+        raise RuntimeError("Crack job creation failed")
+    return job
+
+
+def list_crack_jobs(conn: sqlite3.Connection, project_id: int) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT * FROM crack_jobs WHERE project_id = ? ORDER BY id", (project_id,)))
+
+
+def get_crack_job(conn: sqlite3.Connection, project_id: int, target: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM crack_jobs WHERE project_id = ? AND (name = ? OR hash_file = ?)",
+        (project_id, target, target),
+    ).fetchone()
+
+
+def delete_crack_job(conn: sqlite3.Connection, project_id: int, target: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM crack_jobs WHERE project_id = ? AND (name = ? OR hash_file = ?)",
+        (project_id, target, target),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_crack_run_by_fingerprint(conn: sqlite3.Connection, fingerprint: str) -> Optional[sqlite3.Row]:
+    return conn.execute("SELECT * FROM crack_runs WHERE fingerprint = ?", (fingerprint,)).fetchone()
+
+
+def create_or_update_crack_run(
+    conn: sqlite3.Connection,
+    project_id: int,
+    job_id: int,
+    crackplan_name: str,
+    stage_name: str,
+    fingerprint: str,
+    command: str,
+    raw_output_path: str,
+    result_output_path: str,
+    status: str = "pending",
+) -> sqlite3.Row:
+    conn.execute(
+        """
+        INSERT INTO crack_runs(project_id, job_id, crackplan_name, stage_name, fingerprint, command,
+                               raw_output_path, result_output_path, status)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(fingerprint) DO UPDATE SET
+            command=excluded.command,
+            raw_output_path=excluded.raw_output_path,
+            result_output_path=excluded.result_output_path
+        """,
+        (
+            project_id, job_id, crackplan_name, stage_name, fingerprint, command,
+            raw_output_path, result_output_path, status,
+        ),
+    )
+    conn.commit()
+    run = get_crack_run_by_fingerprint(conn, fingerprint)
+    if run is None:
+        raise RuntimeError("Crack run creation failed")
+    return run
+
+
+def mark_crack_run_started(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE crack_runs
+        SET status = 'running', started_at = CURRENT_TIMESTAMP,
+            finished_at = NULL, exit_code = NULL, error = NULL
+        WHERE id = ?
+        """,
+        (run_id,),
+    )
+    conn.commit()
+
+
+def mark_crack_run_finished(conn: sqlite3.Connection, run_id: int, exit_code: int, status: str, error: str | None = None) -> None:
+    conn.execute(
+        """
+        UPDATE crack_runs
+        SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = ?, error = ?
+        WHERE id = ?
+        """,
+        (status, exit_code, error, run_id),
+    )
+    conn.commit()
+
+
+def insert_cracked_hashes(conn: sqlite3.Connection, results: Iterable[dict]) -> int:
+    count = 0
+    for item in results:
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO cracked_hashes(run_id, project_id, job_id, hash, plaintext, source)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.get("run_id"),
+                item.get("project_id"),
+                item.get("job_id"),
+                item.get("hash"),
+                item.get("plaintext"),
+                item.get("source"),
+            ),
+        )
+        count += cur.rowcount
+    conn.commit()
+    return count
+
+
+def get_cracked_hashes(conn: sqlite3.Connection, project_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT c.*, j.name AS job_name, j.hash_file, r.stage_name, r.crackplan_name
+            FROM cracked_hashes c
+            JOIN crack_jobs j ON j.id = c.job_id
+            JOIN crack_runs r ON r.id = c.run_id
+            WHERE c.project_id = ?
+            ORDER BY j.hash_file, c.plaintext
+            """,
+            (project_id,),
+        )
+    )
+
+
+def get_crack_runs(conn: sqlite3.Connection, project_id: int, status: str | None = None) -> list[sqlite3.Row]:
+    if status:
+        return list(conn.execute("SELECT * FROM crack_runs WHERE project_id = ? AND status = ? ORDER BY id", (project_id, status)))
+    return list(conn.execute("SELECT * FROM crack_runs WHERE project_id = ? ORDER BY id", (project_id,)))
