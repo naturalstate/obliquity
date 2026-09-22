@@ -1,0 +1,104 @@
+{
+  "name": "generic-standard",
+  "description": "Normal pentest content discovery using common, big, medium, and backup/config passes.",
+  "stages": [
+    {
+      "name": "common-directories",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [
+        200,
+        204,
+        301,
+        302,
+        307,
+        308,
+        401,
+        403
+      ],
+      "estimated_minutes": 2
+    },
+    {
+      "name": "big-directories",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/big.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [
+        200,
+        204,
+        301,
+        302,
+        307,
+        308,
+        401,
+        403
+      ],
+      "estimated_minutes": 8
+    },
+    {
+      "name": "dirbuster-medium",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [
+        200,
+        204,
+        301,
+        302,
+        307,
+        308,
+        401,
+        403
+      ],
+      "estimated_minutes": 60
+    },
+    {
+      "name": "backup-and-config-files",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": [
+        "txt",
+        "bak",
+        "old",
+        "zip",
+        "tar",
+        "tar.gz",
+        "conf",
+        "config",
+        "json",
+        "xml",
+        "log"
+      ],
+      "recursion": false,
+      "status_codes": [
+        200,
+        204,
+        301,
+        302,
+        307,
+        308,
+        401,
+        403
+      ],
+      "estimated_minutes": 20
+    },
+    {
+      "name": "limited-recursion",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+      "extensions": [],
+      "recursion": true,
+      "depth": 2,
+      "status_codes": [
+        200,
+        204,
+        301,
+        302,
+        307,
+        308,
+        401,
+        403
+      ],
+      "estimated_minutes": 25
+    }
+  ]
+}

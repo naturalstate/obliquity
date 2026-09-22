@@ -1,0 +1,20 @@
+{
+  "name": "custom-example",
+  "description": "Example custom gameplan using local wordlists.",
+  "stages": [
+    {
+      "name": "small-first-pass",
+      "wordlist": "./wordlists/small.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 401, 403]
+    },
+    {
+      "name": "file-extensions",
+      "wordlist": "./wordlists/small.txt",
+      "extensions": ["php", "txt", "bak", "old", "zip"],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 401, 403]
+    }
+  ]
+}

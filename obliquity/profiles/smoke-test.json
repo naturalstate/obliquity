@@ -1,0 +1,14 @@
+{
+  "name": "smoke-test",
+  "description": "Tiny non-recursive gameplan for verifying Obliquity against an authorized target.",
+  "stages": [
+    {
+      "name": "smoke-test",
+      "wordlist": "smoke-test.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403],
+      "estimated_minutes": 1
+    }
+  ]
+}
