@@ -1,28 +1,35 @@
 # Obliquity Bust MVP
 
-Obliquity Bust is an MVP CLI for staged `feroxbuster` orchestration.
+Obliquity Bust is an MVP CLI for staged penetration-testing tool orchestration,
+built around three pillars, each wrapping a separate underlying tool:
 
-It is not a replacement for feroxbuster. It wraps feroxbuster with:
+- **bust** -- staged content discovery via `feroxbuster`
+- **fuzz** -- parameter/API fuzzing via `ffuf`
+- **crack** -- staged hash cracking via `hashcat`
+
+It is not a replacement for any of those tools. It wraps them with:
 
 - project setup
-- host tracking
+- host/job tracking
 - JSON gameplans
-- sequential discovery stages
+- sequential staged execution
 - completed-stage skipping
 - resume behavior
 - raw output archiving
 - JSONL parsing
 - SQLite storage
-- basic HTML reporting
+- unified HTML reporting across bust/fuzz/crack
 
 ## Current scope
 
 Included:
 
-- `feroxbuster` adapter
-- built-in gameplans
+- `feroxbuster` adapter (bust)
+- `ffuf` adapter (fuzz)
+- `hashcat` adapter (crack)
+- built-in gameplans/crackplans
 - SQLite state
-- HTML report
+- unified HTML report
 - dry-run mode
 - proxy/header support for Burp-style testing
 
@@ -30,19 +37,23 @@ Not included yet:
 
 - wordlist compiler/deduper
 - subdomain discovery
-- ffuf API fuzzing
-- hashcat cracking
 - Burp extension
 - GUI dashboard
+- alternate-tool backends (`gobuster`, `wfuzz`, `john`) as swappable
+  alternatives to feroxbuster/ffuf/hashcat -- planned once bust/fuzz/crack
+  are solid, defaulting to the current tools
 
 ## Requirements
 
 - Python 3.10+
-- feroxbuster installed and available in `PATH`
-- SecLists installed at `/usr/share/seclists` for the default profiles
+- `feroxbuster`, `ffuf`, and `hashcat` installed and available in `PATH`
+  (`obliquity doctor` checks for all three)
+- SecLists installed at `/usr/share/seclists` for the default bust/crack profiles
+  (rockyou.txt is used as the default crack wordlist)
 
 On Kali-like systems, SecLists is often available under `/usr/share/seclists`.
 If your wordlists live elsewhere, copy a built-in JSON profile and edit the paths.
+On macOS, install the tools with Homebrew: `brew install feroxbuster ffuf hashcat`.
 
 ## Install locally
 
@@ -94,6 +105,14 @@ Resume later:
 
 ```bash
 obliquity bust resume acme https://app.acme.com --gameplan aspnet-standard
+```
+
+The host URL is only needed when a project has more than one host. If a
+project has exactly one host, every `bust`/`fuzz` `plan`/`run`/`resume`
+command will use it automatically:
+
+```bash
+obliquity bust run acme --gameplan aspnet-standard
 ```
 
 Generate report:
@@ -172,6 +191,51 @@ obliquity coverage acme
 obliquity coverage acme https://api.acme.com
 ```
 
+## Hash cracking (crack / hashcat)
+
+Feroxbuster and ffuf discover web content and parameters. hashcat cracks
+password hashes gathered during an engagement (dumped NTLM hashes, captured
+hashes, etc.), staged the same way bust/fuzz gameplans are: try a plain
+dictionary first, then the same dictionary with rules, then fall back to a
+mask -- each stage runs only if the previous one didn't recover everything.
+
+Add a hash file as a crack job (a hash file plays the role a host URL plays
+for bust/fuzz -- give it a name so you don't have to keep typing the path):
+
+```bash
+obliquity crack job add acme ./dumped-hashes.txt --hash-type 1000 --name ntlm-dump
+```
+
+`--hash-type` is hashcat's `-m` mode number (e.g. `0` = MD5, `1000` = NTLM,
+`1800` = sha512crypt -- see `hashcat --help` for the full list).
+
+List crack jobs, and built-in crackplans:
+
+```bash
+obliquity crack job list acme
+obliquity gameplans list
+```
+
+Preview, dry-run, and execute a crackplan (the job name is optional the same
+way the host URL is, when the project has exactly one job):
+
+```bash
+obliquity crack plan acme --gameplan quick-dictionary
+obliquity crack run acme --gameplan quick-dictionary --dry-run
+obliquity crack run acme --gameplan standard --open-report
+```
+
+Resume later (completed stages are skipped, same fingerprinting model as
+bust, keyed on hash file + hash type + attack parameters instead of a URL):
+
+```bash
+obliquity crack resume acme --gameplan standard
+```
+
+A hashcat exit code of 1 ("exhausted this wordlist/mask, hashes remain")
+is treated as a normal stage completion, not a failure -- that's what lets
+a crackplan fall through to its next stage automatically.
+
 Check core and optional tools:
 
 ```bash
@@ -199,12 +263,22 @@ Use arrow keys, Enter, Tab, Space, Escape, and the letter shortcuts to explore w
 
 ## Built-in gameplans
 
+Bust (feroxbuster):
+
 - `generic-quick`
 - `generic-standard`
 - `aspnet-standard`
 - `php-standard`
 - `api-quick`
 - `smoke-test` (seven entries, non-recursive; intended only for installation/workflow checks)
+
+Fuzz (ffuf): `parameter-names-quick`, `parameter-values-quick`, `api-request-quick`.
+
+Crack (hashcat):
+
+- `quick-dictionary` (single rockyou pass)
+- `standard` (rockyou, then rockyou+best64 rules, then a policy-shaped mask)
+- `smoke-test` (tiny bundled wordlist, no SecLists needed; for verifying the hashcat integration works)
 
 Use a custom gameplan path instead of a built-in name:
 
@@ -214,7 +288,7 @@ obliquity bust run acme https://app.acme.com --gameplan ./examples/custom-gamepl
 
 ## How resume works
 
-Each stage gets a fingerprint based on:
+Each bust stage gets a fingerprint based on:
 
 - target URL
 - gameplan name
@@ -226,10 +300,14 @@ Each stage gets a fingerprint based on:
 - status codes
 - extra args
 
+Crack stages are fingerprinted the same way, but keyed on hash file + hash
+type instead of a URL, plus attack mode / wordlist / rules / mask.
+
 If a stage completed successfully before, Obliquity skips it unless `--force` is used.
 
 ```bash
 obliquity bust run acme https://app.acme.com --gameplan aspnet-standard --force
+obliquity crack run acme --gameplan standard --force
 ```
 
 ## Data location
@@ -248,10 +326,12 @@ export OBLIQUITY_HOME=/path/to/workdir
 
 ## Notes
 
-This MVP intentionally keeps the design simple. The next obvious feature is the wordlist compiler:
+This MVP intentionally keeps the design simple. Two planned follow-ups:
 
-```bash
-obliquity wordlists build
-```
-
-That would generate deduplicated staged lists such as `quick`, `standard-delta`, and `large-delta`.
+- a wordlist compiler/deduper (`obliquity wordlists build`) that would
+  generate deduplicated staged lists such as `quick`, `standard-delta`,
+  and `large-delta`
+- alternate-tool backends -- `gobuster` as an alternative to feroxbuster,
+  `wfuzz` as an alternative to ffuf, `john` as an alternative to hashcat --
+  selectable per run, defaulting to the current feroxbuster/ffuf/hashcat
+  trio
