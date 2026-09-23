@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from obliquity.core.wordlists import resolve_path
+
 
 @dataclass
 class FuzzPlan:
@@ -39,7 +41,7 @@ def load_fuzz_plan(path: Path) -> FuzzPlan:
         name=data.get("name") or path.stem,
         description=data.get("description", ""),
         operation_category=data["operation_category"],
-        wordlist=str(wordlist),
+        wordlist=resolve_path(str(wordlist)),
         mode=data.get("mode", "clusterbomb"),
         autocalibrate=bool(data.get("autocalibrate", True)),
     )

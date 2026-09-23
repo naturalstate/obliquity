@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from obliquity.core.wordlists import resolve_path
+
 
 @dataclass
 class Stage:
@@ -34,6 +36,7 @@ def load_gameplan(path: Path) -> Gameplan:
         wordlist = Path(stage.wordlist)
         if not wordlist.is_absolute():
             stage.wordlist = str((path.parent / wordlist).resolve())
+        stage.wordlist = resolve_path(stage.wordlist)
     if not stages:
         raise ValueError(f"Gameplan has no stages: {path}")
     return Gameplan(

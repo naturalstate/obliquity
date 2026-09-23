@@ -49,11 +49,41 @@ Not included yet:
 - `feroxbuster`, `ffuf`, and `hashcat` installed and available in `PATH`
   (`obliquity doctor` checks for all three)
 - SecLists installed at `/usr/share/seclists` for the default bust/crack profiles
-  (rockyou.txt is used as the default crack wordlist)
+  (rockyou.txt is used as the default crack wordlist) -- or let Obliquity
+  download the specific files it needs, see **Wordlist setup** below
 
 On Kali-like systems, SecLists is often available under `/usr/share/seclists`.
 If your wordlists live elsewhere, copy a built-in JSON profile and edit the paths.
 On macOS, install the tools with Homebrew: `brew install feroxbuster ffuf hashcat`.
+
+## Wordlist setup
+
+Obliquity doesn't require the full SecLists repo -- it can download just the
+specific files its built-in gameplans reference (a handful of individual
+files, not a multi-GB clone), stored under `~/.obliquity/wordlists/`. A
+built-in gameplan that references e.g. `/usr/share/seclists/...` will
+automatically fall back to the downloaded copy if that system path doesn't
+exist, with no profile edits needed.
+
+`obliquity project create` checks for missing default wordlists and offers
+to download them right there if run interactively; otherwise (or any time
+later) run it explicitly:
+
+```bash
+obliquity wordlists status                  # what's missing
+obliquity wordlists setup                   # interactive: ask per wordlist
+obliquity wordlists install seclists-common rockyou   # install specific ones
+obliquity wordlists install --all-missing   # install everything referenced by built-ins
+obliquity wordlists list                    # full catalog + install status
+```
+
+`rockyou` is the largest catalog entry (~50MB download, ~133MB extracted) and
+is only needed for the crack gameplans beyond `smoke-test`. For anything
+outside this small catalog -- CMS-specific lists, Assetnote's
+technology-specific collections, etc. -- `obliquity wordlists list` prints
+links to the full SecLists repo and Assetnote's wordlist site; download those
+yourself and point a custom gameplan JSON at them, the same way `bust run
+... --gameplan ./my-plan.json` already works.
 
 ## Install locally
 
@@ -277,7 +307,7 @@ Fuzz (ffuf): `parameter-names-quick`, `parameter-values-quick`, `api-request-qui
 Crack (hashcat):
 
 - `quick-dictionary` (single rockyou pass)
-- `standard` (rockyou, then rockyou+best64 rules, then a policy-shaped mask)
+- `standard` (rockyou, then rockyou+best66 rules, then a policy-shaped mask)
 - `smoke-test` (tiny bundled wordlist, no SecLists needed; for verifying the hashcat integration works)
 
 Use a custom gameplan path instead of a built-in name:

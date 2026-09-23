@@ -16,6 +16,7 @@ from obliquity.core.console import (
     command_block,
     kv,
     live_progress_line,
+    progress_bar,
     rainbow_text,
     section,
     subsection,
@@ -49,6 +50,14 @@ from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_p
 from obliquity.core.reporting import generate_html
 from obliquity.core.runner import preview_plan, run_gameplan
 from obliquity.core.tools import inventory_tools
+from obliquity.core.wordlists import (
+    EXTERNAL_SOURCES,
+    WORDLIST_CATALOG,
+    catalog_by_name,
+    download_entry,
+    installed_path,
+    is_installed,
+)
 
 APP_DIR = Path(os.environ.get("OBLIQUITY_HOME", Path.home() / ".obliquity"))
 DB_PATH = APP_DIR / "obliquity.db"
@@ -348,6 +357,20 @@ def cmd_project_create(args) -> None:
     kv("Name", project["name"])
     kv("Root", project["root_dir"])
 
+    missing = default_profile_missing_entries()
+    if missing:
+        section("Wordlist setup", "yellow")
+        print(c("Some wordlists used by Obliquity's built-in gameplans aren't installed yet:", "yellow"))
+        for entry in missing:
+            bullet(entry.name, entry.description, color="yellow")
+        if sys.stdin.isatty():
+            answer = input("\nDownload them now? [y/N] ").strip().lower()
+            if answer in ("y", "yes"):
+                for entry in missing:
+                    install_wordlist_entry(entry)
+                return
+        print(c("Run 'obliquity wordlists setup' any time to install them.", "yellow"))
+
 
 def cmd_project_archive(args) -> None:
     conn = connect(DB_PATH)
@@ -562,6 +585,123 @@ def cmd_doctor(args) -> None:
     missing = [item.name for item in statuses if item.required and not item.installed]
     if missing:
         print(c(f"\nObliquity remains usable, but core capabilities are unavailable: {', '.join(missing)}", "yellow"))
+
+
+def default_profile_missing_entries() -> list:
+    """Catalog entries referenced by a built-in bust/fuzz/crack profile that
+    aren't resolvable yet (not at their original path, not already downloaded)."""
+    referenced_paths: set[str] = set()
+    for path in list_builtin_gameplans():
+        for stage in load_gameplan(path).stages:
+            referenced_paths.add(stage.wordlist)
+    for path in list_fuzz_plans():
+        referenced_paths.add(load_fuzz_plan(path).wordlist)
+    for path in list_builtin_crackplans():
+        for stage in load_crackplan(path).stages:
+            if stage.wordlist:
+                referenced_paths.add(stage.wordlist)
+            if stage.rules:
+                referenced_paths.add(stage.rules)
+
+    missing = []
+    for entry in WORDLIST_CATALOG:
+        if is_installed(entry):
+            continue
+        if any(p.endswith(entry.match_suffix) for p in referenced_paths):
+            missing.append(entry)
+    return missing
+
+
+def print_download_progress(name: str, downloaded: int, total: int | None) -> None:
+    if not supports_color():
+        return
+    kb = downloaded // 1024
+    if total:
+        percent = min(100, round(downloaded * 100 / total))
+        print(f"\r{c(name, 'cyan', bold=True)} {progress_bar(percent)} {percent:3d}%  {kb} KB", end="", flush=True)
+    else:
+        print(f"\r{c(name, 'cyan', bold=True)} {kb} KB downloaded", end="", flush=True)
+
+
+def install_wordlist_entry(entry) -> None:
+    section(f"Downloading {entry.name}", "cyan")
+    kv("Source", entry.url)
+    kv("Destination", installed_path(entry))
+    download_entry(entry, progress_callback=lambda d, t, n=entry.name: print_download_progress(n, d, t))
+    if supports_color():
+        print()
+    kv("Installed", installed_path(entry), color="green")
+
+
+def cmd_wordlists_list(args) -> None:
+    section("Wordlist catalog", "cyan")
+    for entry in WORDLIST_CATALOG:
+        installed = is_installed(entry)
+        subsection(entry.name, "magenta")
+        bullet("Description", entry.description)
+        bullet("Category", entry.category)
+        bullet("Status", "installed" if installed else "not installed", color="green" if installed else "yellow")
+        bullet("Path", installed_path(entry))
+    section("Other wordlist sources (not auto-installed)", "blue")
+    for label, url in EXTERNAL_SOURCES:
+        bullet(label, url)
+
+
+def cmd_wordlists_status(args) -> None:
+    section("Wordlist status", "cyan")
+    missing = default_profile_missing_entries()
+    if not missing:
+        print(c("All wordlists/rules referenced by built-in gameplans are available.", "green"))
+        return
+    print(c("Missing wordlists/rules used by built-in gameplans:", "yellow"))
+    for entry in missing:
+        bullet(entry.name, entry.description, color="yellow")
+    print(c("\nInstall with: obliquity wordlists install <name>, or obliquity wordlists setup", "yellow"))
+
+
+def cmd_wordlists_install(args) -> None:
+    if args.all_missing:
+        entries = default_profile_missing_entries()
+        if not entries:
+            section("Wordlist install", "green")
+            print("Nothing missing -- all built-in gameplan wordlists are already available.")
+            return
+    else:
+        if not args.name:
+            die("specify one or more wordlist names, or use --all-missing. See: obliquity wordlists list")
+        entries = []
+        for name in args.name:
+            entry = catalog_by_name(name)
+            if entry is None:
+                die(f"unknown wordlist '{name}'. See: obliquity wordlists list")
+            entries.append(entry)
+
+    for entry in entries:
+        if is_installed(entry) and not args.force:
+            section(f"Skipping {entry.name}", "yellow")
+            kv("Reason", "already installed (use --force to redownload)", color="yellow")
+            continue
+        install_wordlist_entry(entry)
+
+
+def cmd_wordlists_setup(args) -> None:
+    section("Wordlist setup", "cyan")
+    missing = default_profile_missing_entries()
+    if not missing:
+        print(c("All wordlists/rules referenced by built-in gameplans are already available.", "green"))
+        return
+    print("The following wordlists/rules are used by Obliquity's built-in gameplans but aren't installed yet:")
+    for entry in missing:
+        bullet(entry.name, entry.description)
+    blank()
+    for entry in missing:
+        answer = input(f"Download {entry.name}? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            continue
+        install_wordlist_entry(entry)
+    section("Other wordlist sources (not auto-installed)", "blue")
+    for label, url in EXTERNAL_SOURCES:
+        bullet(label, url)
 
 
 def cmd_coverage(args) -> None:
@@ -903,6 +1043,35 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
     doctor.set_defaults(func=cmd_doctor)
+
+    wordlists = sub.add_parser(
+        "wordlists", help="manage downloadable wordlists and rules", formatter_class=formatter,
+        epilog="""examples:
+  obliquity wordlists list
+  obliquity wordlists status
+  obliquity wordlists install seclists-common rockyou
+  obliquity wordlists install --all-missing
+  obliquity wordlists setup""",
+    )
+    wordlists_sub = wordlists.add_subparsers(dest="wordlists_cmd", required=True)
+
+    wl = wordlists_sub.add_parser("list", help="show the wordlist catalog and install status", formatter_class=formatter)
+    wl.set_defaults(func=cmd_wordlists_list)
+
+    ws = wordlists_sub.add_parser("status", help="show which built-in gameplan wordlists are missing", formatter_class=formatter)
+    ws.set_defaults(func=cmd_wordlists_status)
+
+    wi = wordlists_sub.add_parser(
+        "install", help="download one or more catalog wordlists", formatter_class=formatter,
+        epilog="examples:\n  obliquity wordlists install seclists-common rockyou\n  obliquity wordlists install --all-missing",
+    )
+    wi.add_argument("name", nargs="*", help="catalog entry name(s); see 'obliquity wordlists list'")
+    wi.add_argument("--all-missing", action="store_true", help="install everything referenced by built-in gameplans that isn't already available")
+    wi.add_argument("--force", action="store_true", help="redownload even if already installed")
+    wi.set_defaults(func=cmd_wordlists_install)
+
+    wsetup = wordlists_sub.add_parser("setup", help="interactively install missing default wordlists", formatter_class=formatter)
+    wsetup.set_defaults(func=cmd_wordlists_setup)
 
     fuzz = sub.add_parser("fuzz", help="run ffuf parameter and request fuzzing", formatter_class=formatter, epilog="""examples:
   obliquity fuzz run acme https://app.test --gameplan parameter-names-quick --endpoint /search

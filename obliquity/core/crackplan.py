@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from obliquity.core.wordlists import resolve_path
+
 
 @dataclass
 class CrackStage:
@@ -39,10 +41,12 @@ def load_crackplan(path: Path) -> CrackPlan:
             wordlist = Path(stage.wordlist)
             if not wordlist.is_absolute():
                 stage.wordlist = str((path.parent / wordlist).resolve())
+            stage.wordlist = resolve_path(stage.wordlist)
         if stage.rules:
             rules = Path(stage.rules)
             if not rules.is_absolute():
                 stage.rules = str((path.parent / rules).resolve())
+            stage.rules = resolve_path(stage.rules)
     if not stages:
         raise ValueError(f"Crack plan has no stages: {path}")
     return CrackPlan(
