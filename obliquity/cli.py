@@ -58,7 +58,7 @@ from obliquity.core.database import (
 from obliquity.core.gameplan import find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
-from obliquity.core.reporting import generate_html
+from obliquity.core.reporting import generate_csv, generate_html, generate_json, generate_markdown
 from obliquity.core.runner import preview_plan, run_gameplan
 from obliquity.core.tools import inventory_tools
 from obliquity.core.wordlists import (
@@ -1103,11 +1103,17 @@ def cmd_crack_resume(args) -> None:
     cmd_crack_run(args)
 
 
+def gather_report_data(conn, project):
+    return (
+        get_runs(conn, project["id"]),
+        get_findings(conn, project["id"]),
+        get_crack_runs(conn, project["id"]),
+        get_cracked_hashes(conn, project["id"]),
+    )
+
+
 def write_html_report(conn, project, output: Path | None = None) -> Path:
-    runs = get_runs(conn, project["id"])
-    findings = get_findings(conn, project["id"])
-    crack_runs = get_crack_runs(conn, project["id"])
-    cracked_hashes = get_cracked_hashes(conn, project["id"])
+    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
     output = output or Path(project["root_dir"]) / "report.html"
     generate_html(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
     section("HTML report", "green")
@@ -1129,6 +1135,47 @@ def cmd_report_html(args) -> None:
     output = write_html_report(conn, project, Path(args.output) if args.output else None)
     if args.open:
         open_html_report(output)
+
+
+def cmd_report_json(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
+    output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.json"
+    generate_json(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
+    section("JSON report", "green")
+    kv("Report written", output)
+
+
+CSV_DATASETS = {
+    "findings": lambda data: data[1],
+    "cracked-hashes": lambda data: data[3],
+    "runs": lambda data: data[0],
+    "crack-runs": lambda data: data[2],
+}
+
+
+def cmd_report_csv(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    data = gather_report_data(conn, project)
+    rows = CSV_DATASETS[args.kind](data)
+    output = Path(args.output) if args.output else Path(project["root_dir"]) / f"report-{args.kind}.csv"
+    generate_csv(rows, output)
+    section("CSV report", "green")
+    kv("Dataset", args.kind)
+    kv("Rows", len(rows))
+    kv("Report written", output)
+
+
+def cmd_report_markdown(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
+    output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.md"
+    generate_markdown(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
+    section("Markdown report", "green")
+    kv("Report written", output)
 
 
 def cmd_runs(args) -> None:
@@ -1530,6 +1577,31 @@ for detailed options and examples. Only test systems you are authorized to asses
     rh.add_argument("--output", help="custom report path")
     rh.add_argument("--open", action="store_true", help="open the report in the default browser")
     rh.set_defaults(func=cmd_report_html)
+
+    rj = report_sub.add_parser(
+        "json", help="generate a JSON report (runs, findings, crack runs, cracked hashes)", formatter_class=formatter,
+        epilog="examples:\n  obliquity report json acme\n  obliquity report json acme --output ./acme-report.json",
+    )
+    rj.add_argument("project", help="project name")
+    rj.add_argument("--output", help="custom report path")
+    rj.set_defaults(func=cmd_report_json)
+
+    rc = report_sub.add_parser(
+        "csv", help="generate a CSV report for one dataset", formatter_class=formatter,
+        epilog="examples:\n  obliquity report csv acme\n  obliquity report csv acme --kind cracked-hashes",
+    )
+    rc.add_argument("project", help="project name")
+    rc.add_argument("--kind", choices=sorted(CSV_DATASETS), default="findings", help="which dataset to export (default: findings)")
+    rc.add_argument("--output", help="custom report path")
+    rc.set_defaults(func=cmd_report_csv)
+
+    rm = report_sub.add_parser(
+        "markdown", help="generate a Markdown report", formatter_class=formatter,
+        epilog="examples:\n  obliquity report markdown acme\n  obliquity report markdown acme --output ./acme-report.md",
+    )
+    rm.add_argument("project", help="project name")
+    rm.add_argument("--output", help="custom report path")
+    rm.set_defaults(func=cmd_report_markdown)
 
     return p
 

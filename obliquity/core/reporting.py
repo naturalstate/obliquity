@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
 import html
+import json
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from sqlite3 import Row
 
@@ -211,4 +214,101 @@ def generate_html(
 </html>
 """
     output_path.write_text(html_doc, encoding="utf-8")
+    return output_path
+
+
+def generate_json(
+    project: Row,
+    runs: list[Row],
+    findings: list[Row],
+    output_path: Path,
+    crack_runs: list[Row] | None = None,
+    cracked_hashes: list[Row] | None = None,
+) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "project": project["name"],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "runs": [dict(r) for r in runs],
+        "findings": [dict(f) for f in findings],
+        "crack_runs": [dict(r) for r in (crack_runs or [])],
+        "cracked_hashes": [dict(c) for c in (cracked_hashes or [])],
+    }
+    output_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    return output_path
+
+
+def generate_csv(rows: list[Row], output_path: Path) -> Path:
+    """Write any single result set (findings, cracked_hashes, runs, ...) as
+    a flat CSV -- one file per dataset, since they don't share columns."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        if not rows:
+            return output_path
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(dict(row))
+    return output_path
+
+
+def _md_esc(value) -> str:
+    if value is None:
+        return ""
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _md_table(headers: list[str], rows: list[list]) -> list[str]:
+    if not rows:
+        return ["_None_", ""]
+    lines = [f"| {' | '.join(headers)} |", f"|{'|'.join(['---'] * len(headers))}|"]
+    for row in rows:
+        lines.append(f"| {' | '.join(_md_esc(v) for v in row)} |")
+    lines.append("")
+    return lines
+
+
+def generate_markdown(
+    project: Row,
+    runs: list[Row],
+    findings: list[Row],
+    output_path: Path,
+    crack_runs: list[Row] | None = None,
+    cracked_hashes: list[Row] | None = None,
+) -> Path:
+    crack_runs = crack_runs or []
+    cracked_hashes = cracked_hashes or []
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        f"# Obliquity Report -- {project['name']}",
+        "",
+        f"- Findings: {len(findings)}",
+        f"- Runs: {len(runs)} ({sum(1 for r in runs if r['status'] == 'completed')} completed, "
+        f"{sum(1 for r in runs if r['status'] == 'failed')} failed)",
+        f"- Cracked hashes: {len(cracked_hashes)}",
+        f"- Crack runs: {len(crack_runs)}",
+        "",
+        "## Findings",
+        "",
+    ]
+    lines += _md_table(
+        ["Status", "URL", "Length", "Redirect", "Source"],
+        [[f["status_code"], f["url"], f["content_length"], f["redirect"], f["source"]] for f in findings],
+    )
+    lines += ["## Cracked Hashes", ""]
+    lines += _md_table(
+        ["Job", "Hash", "Plaintext", "Stage"],
+        [
+            [c["job_name"] or c["hash_file"], c["hash"], c["plaintext"], c["stage_name"]]
+            for c in cracked_hashes
+        ],
+    )
+    lines += ["## Runs", ""]
+    lines += _md_table(
+        ["Stage", "Gameplan", "Status", "Exit", "Command"],
+        [[r["stage_name"], r["gameplan_name"], r["status"], r["exit_code"], r["command"]] for r in runs],
+    )
+
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output_path
