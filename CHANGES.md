@@ -500,6 +500,21 @@ re-running produced "hashcat (v7.1.2) starting in restore mode" with no
 stale-session errors. Only crack gets this -- bust's feroxbuster runs
 `--no-state` and ffuf has no checkpointing.
 
+### 16. Cross-platform install docs
+
+You noticed the README's install instructions only covered macOS and
+Debian -- no Windows, and only one Linux family. Expanded the Requirements
+section to cover installing both Python and the three tools on Windows
+(winget, plus curl for the hashcat portable build since it has no winget
+package), Debian/Ubuntu/Kali (apt), Fedora/RHEL (dnf), and Arch (pacman).
+Verified the exact commands against upstream rather than guessing:
+feroxbuster ships `winget install epi052.feroxbuster` and a `pacman`
+package but isn't in Fedora's repos (so its curl install-nix.sh script is
+shown there); ffuf ships `winget install ffuf.ffuf` and `go install
+github.com/ffuf/ffuf/v2@latest`; hashcat is in apt/dnf/pacman but on
+Windows is a portable download from hashcat.net. Added a "no package
+manager" fallback pointing at all three release pages.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

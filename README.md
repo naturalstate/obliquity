@@ -156,17 +156,67 @@ so the busywork disappears and you just read results.
   download the handful of files it actually needs, see
   [Wordlist setup](#wordlist-setup)
 
-macOS (Homebrew):
+### Installing Python 3.10+
+
+If you don't already have it (`python3 --version` / `py --version`):
+
+| Platform | Command |
+|---|---|
+| macOS (Homebrew) | `brew install python` |
+| Windows (winget) | `winget install Python.Python.3.12` |
+| Debian / Ubuntu / Kali | `sudo apt install python3 python3-pip python3-venv` |
+| Fedora / RHEL | `sudo dnf install python3 python3-pip` |
+| Arch | `sudo pacman -S python python-pip` |
+
+`pip` and `venv` ship with Python on Windows/macOS; on Debian/Ubuntu they're
+the separate `python3-pip` / `python3-venv` packages shown above.
+
+### Installing feroxbuster, ffuf, and hashcat
+
+**macOS (Homebrew):**
 
 ```bash
 brew install feroxbuster ffuf hashcat
 ```
 
-Kali/Debian-family:
+**Windows (winget):**
+
+```powershell
+winget install epi052.feroxbuster
+winget install ffuf.ffuf
+# hashcat has no winget package -- grab the portable build from hashcat.net,
+# unzip it, and add the folder to your PATH:
+curl.exe -L -o hashcat.7z https://hashcat.net/files/hashcat-6.2.6.7z
+# (check https://hashcat.net/hashcat/ for the current version number)
+```
+
+**Debian / Ubuntu / Kali (apt):**
 
 ```bash
 sudo apt install feroxbuster ffuf hashcat
 ```
+
+**Fedora / RHEL (dnf):** hashcat is packaged; feroxbuster and ffuf aren't, so
+install those from upstream:
+
+```bash
+sudo dnf install hashcat
+curl -sL https://raw.githubusercontent.com/epi052/feroxbuster/main/install-nix.sh | bash -s $HOME/.local/bin
+go install github.com/ffuf/ffuf/v2@latest   # or grab a prebuilt binary from ffuf's releases page
+```
+
+**Arch (pacman):**
+
+```bash
+sudo pacman -S feroxbuster hashcat
+go install github.com/ffuf/ffuf/v2@latest   # ffuf: via Go, or the AUR (yay -S ffuf)
+```
+
+**Any platform, no package manager:** all three ship prebuilt binaries on
+their release pages -- download, extract, and put them on your `PATH`:
+[feroxbuster](https://github.com/epi052/feroxbuster/releases/latest),
+[ffuf](https://github.com/ffuf/ffuf/releases/latest),
+[hashcat](https://hashcat.net/hashcat/).
 
 ## Installation
 
