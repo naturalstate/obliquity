@@ -37,6 +37,27 @@ class BuildCommandTests(TestCase):
 
         self.assertEqual(command[command.index("--outfile-format") + 1], "1,2")
 
+    def test_combinator_uses_a1_and_both_wordlists_in_order(self) -> None:
+        stage = CrackStage(name="comb", attack_mode="combinator", wordlist="a.txt", wordlist2="b.txt")
+        command = build_command("hashes.txt", 0, stage, Path("out.txt"))
+
+        self.assertEqual(command[command.index("-a") + 1], "1")
+        self.assertEqual(command[-3:], ["hashes.txt", "a.txt", "b.txt"])
+
+    def test_hybrid_wordlist_mask_uses_a6_wordlist_then_mask(self) -> None:
+        stage = CrackStage(name="hyb", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d?d?d")
+        command = build_command("hashes.txt", 0, stage, Path("out.txt"))
+
+        self.assertEqual(command[command.index("-a") + 1], "6")
+        self.assertEqual(command[-3:], ["hashes.txt", "w.txt", "?d?d?d?d"])
+
+    def test_hybrid_mask_wordlist_uses_a7_mask_then_wordlist(self) -> None:
+        stage = CrackStage(name="hyb", attack_mode="hybrid-mask-wordlist", wordlist="w.txt", mask="?d?d")
+        command = build_command("hashes.txt", 0, stage, Path("out.txt"))
+
+        self.assertEqual(command[command.index("-a") + 1], "7")
+        self.assertEqual(command[-3:], ["hashes.txt", "?d?d", "w.txt"])
+
 
 class ParseOutputTests(TestCase):
     def test_parses_hash_colon_plaintext_lines(self) -> None:

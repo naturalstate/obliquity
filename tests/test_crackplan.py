@@ -29,6 +29,26 @@ class CrackStageValidationTests(TestCase):
         stage = CrackStage(name="ok", attack_mode="mask", mask="?d?d?d?d")
         self.assertEqual(stage.mask, "?d?d?d?d")
 
+    def test_unknown_attack_mode_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            CrackStage(name="bad", attack_mode="rainbow-table", wordlist="w.txt")
+
+    def test_combinator_requires_two_wordlists(self) -> None:
+        with self.assertRaises(ValueError):
+            CrackStage(name="bad", attack_mode="combinator", wordlist="a.txt")  # missing wordlist2
+        stage = CrackStage(name="ok", attack_mode="combinator", wordlist="a.txt", wordlist2="b.txt")
+        self.assertEqual(stage.wordlist2, "b.txt")
+
+    def test_hybrid_requires_wordlist_and_mask(self) -> None:
+        with self.assertRaises(ValueError):
+            CrackStage(name="bad", attack_mode="hybrid-wordlist-mask", wordlist="w.txt")  # missing mask
+        stage = CrackStage(name="ok", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d")
+        self.assertEqual((stage.wordlist, stage.mask), ("w.txt", "?d?d"))
+
+    def test_rules_rejected_on_non_dictionary_mode(self) -> None:
+        with self.assertRaises(ValueError):
+            CrackStage(name="bad", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d", rules="best66.rule")
+
 
 class FingerprintTests(TestCase):
     def test_fingerprint_changes_with_hash_type(self) -> None:

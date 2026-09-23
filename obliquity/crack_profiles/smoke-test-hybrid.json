@@ -1,0 +1,13 @@
+{
+  "name": "smoke-test-hybrid",
+  "description": "Tiny hybrid-attack check using the bundled wordlist plus a 2-digit mask (word + ?d?d). Verifies the hybrid attack mode end to end without external wordlists. Not for real engagements.",
+  "stages": [
+    {
+      "name": "bundled-word-plus-2-digits",
+      "attack_mode": "hybrid-wordlist-mask",
+      "wordlist": "smoke-test-wordlist.txt",
+      "mask": "?d?d",
+      "estimated_minutes": 1
+    }
+  ]
+}

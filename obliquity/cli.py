@@ -423,11 +423,13 @@ def print_run_event(event: dict) -> None:
 def print_crack_stage_summary(row: dict) -> None:
     subsection(f"Stage {row['number']}: {row['name']}", "magenta")
     bullet("Attack mode", row["attack_mode"])
-    if row["attack_mode"] == "dictionary":
+    if row.get("wordlist"):
         bullet("Wordlist", row["wordlist"])
-        if row.get("rules"):
-            bullet("Rules", row["rules"])
-    elif row["attack_mode"] == "mask":
+    if row.get("wordlist2"):
+        bullet("Wordlist 2", row["wordlist2"])
+    if row.get("rules"):
+        bullet("Rules", row["rules"])
+    if row.get("mask"):
         bullet("Mask", row["mask"])
     bullet("Estimated time", fmt_estimate(row.get("estimated_minutes")))
 
@@ -465,22 +467,27 @@ def print_crack_event(event: dict) -> None:
         bullet("Reason", event.get("reason", "already completed"), color="yellow")
         return
 
+    def _crack_stage_fields() -> None:
+        bullet("Attack mode", event.get("attack_mode"))
+        if event.get("wordlist"):
+            bullet("Wordlist", event["wordlist"])
+        if event.get("wordlist2"):
+            bullet("Wordlist 2", event["wordlist2"])
+        if event.get("rules"):
+            bullet("Rules", event["rules"])
+        if event.get("mask"):
+            bullet("Mask", event["mask"])
+
     if action == "planned":
         subsection(f"Planned {stage_label}", "magenta")
-        bullet("Attack mode", event.get("attack_mode"))
-        bullet("Wordlist", event.get("wordlist") or "-")
-        bullet("Rules", event.get("rules") or "-")
-        bullet("Mask", event.get("mask") or "-")
+        _crack_stage_fields()
         bullet("Cracked output", event.get("result_output"))
         command_block(event.get("command", ""))
         return
 
     if action == "starting":
         subsection(f"Running {stage_label}", "green")
-        bullet("Attack mode", event.get("attack_mode"))
-        bullet("Wordlist", event.get("wordlist") or "-")
-        bullet("Rules", event.get("rules") or "-")
-        bullet("Mask", event.get("mask") or "-")
+        _crack_stage_fields()
         bullet("Raw output", event.get("raw_output"))
         bullet("Cracked output", event.get("result_output"))
         command_block(event.get("command", ""))
@@ -721,11 +728,13 @@ def cmd_gameplans_list(args) -> None:
             for row in preview_crackplan(crackplan):
                 print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
                 print(f"     {c('Attack mode:', 'cyan', bold=True)} {row['attack_mode']}")
-                if row["attack_mode"] == "dictionary":
+                if row.get("wordlist"):
                     print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
-                    if row.get("rules"):
-                        print(f"     {c('Rules:', 'cyan', bold=True)} {row['rules']}")
-                elif row["attack_mode"] == "mask":
+                if row.get("wordlist2"):
+                    print(f"     {c('Wordlist 2:', 'cyan', bold=True)} {row['wordlist2']}")
+                if row.get("rules"):
+                    print(f"     {c('Rules:', 'cyan', bold=True)} {row['rules']}")
+                if row.get("mask"):
                     print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
             blank()
 

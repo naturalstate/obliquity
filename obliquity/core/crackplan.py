@@ -9,21 +9,45 @@ from typing import Any
 from obliquity.core.wordlists import resolve_path
 
 
+# attack_mode -> the fields it requires. Also the set of modes Obliquity knows.
+CRACK_MODE_REQUIREMENTS = {
+    "dictionary": ("wordlist",),
+    "mask": ("mask",),
+    "combinator": ("wordlist", "wordlist2"),
+    "hybrid-wordlist-mask": ("wordlist", "mask"),
+    "hybrid-mask-wordlist": ("wordlist", "mask"),
+}
+
+
 @dataclass
 class CrackStage:
     name: str
-    attack_mode: str  # "dictionary" or "mask"
+    attack_mode: str  # see CRACK_MODE_REQUIREMENTS
     wordlist: str | None = None
+    wordlist2: str | None = None  # second wordlist for combinator attacks
     rules: str | None = None
     mask: str | None = None
     extra_args: list[str] = field(default_factory=list)
     estimated_minutes: int | None = None
 
     def __post_init__(self) -> None:
-        if self.attack_mode == "dictionary" and not self.wordlist:
-            raise ValueError(f"crack stage '{self.name}' uses attack_mode=dictionary but has no wordlist")
-        if self.attack_mode == "mask" and not self.mask:
-            raise ValueError(f"crack stage '{self.name}' uses attack_mode=mask but has no mask")
+        if self.attack_mode not in CRACK_MODE_REQUIREMENTS:
+            raise ValueError(
+                f"crack stage '{self.name}' has unknown attack_mode '{self.attack_mode}' "
+                f"(expected one of: {', '.join(sorted(CRACK_MODE_REQUIREMENTS))})"
+            )
+        for attr in CRACK_MODE_REQUIREMENTS[self.attack_mode]:
+            if not getattr(self, attr):
+                raise ValueError(
+                    f"crack stage '{self.name}' uses attack_mode={self.attack_mode} but has no {attr}"
+                )
+        # `-r` rules files only apply to straight/dictionary attacks in hashcat;
+        # hybrid/combinator use -j/-k (via extra_args) instead.
+        if self.rules and self.attack_mode != "dictionary":
+            raise ValueError(
+                f"crack stage '{self.name}' sets rules, which hashcat only supports with "
+                f"attack_mode=dictionary (got {self.attack_mode})"
+            )
 
 
 @dataclass
@@ -42,6 +66,11 @@ def load_crackplan(path: Path) -> CrackPlan:
             if not wordlist.is_absolute():
                 stage.wordlist = str((path.parent / wordlist).resolve())
             stage.wordlist = resolve_path(stage.wordlist)
+        if stage.wordlist2:
+            wordlist2 = Path(stage.wordlist2)
+            if not wordlist2.is_absolute():
+                stage.wordlist2 = str((path.parent / wordlist2).resolve())
+            stage.wordlist2 = resolve_path(stage.wordlist2)
         if stage.rules:
             rules = Path(stage.rules)
             if not rules.is_absolute():
@@ -65,6 +94,7 @@ def fingerprint_crack_stage(hash_file: str, hash_type: int, plan: CrackPlan, sta
         "stage": stage.name,
         "attack_mode": stage.attack_mode,
         "wordlist": stage.wordlist,
+        "wordlist2": stage.wordlist2,
         "rules": stage.rules,
         "mask": stage.mask,
         "extra_args": stage.extra_args,
