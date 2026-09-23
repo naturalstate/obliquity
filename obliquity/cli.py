@@ -670,53 +670,61 @@ def cmd_crack_job_remove(args) -> None:
 
 
 def cmd_gameplans_list(args) -> None:
-    section("Available gameplans", "cyan")
-    for path in list_builtin_gameplans():
-        gameplan = load_gameplan(path)
-        subsection(gameplan.name, "magenta")
-        if gameplan.description:
-            bullet("Description", gameplan.description)
-        bullet("Stages", len(gameplan.stages))
-        if not args.brief:
-            for row in preview_plan("https://example.local", gameplan):
-                print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
-                print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
-                print(f"     {c('Extensions:', 'cyan', bold=True)} {fmt_list(row['extensions'])}")
-                print(f"     {c('Recursion:', 'cyan', bold=True)} {fmt_recursion(row['recursion'], row['depth'])}")
-            blank()
+    # Optional tool filter: `gameplans list bust|fuzz|crack` shows just that
+    # pillar. None = show all three. (fuzz's own `list` subcommand doesn't set
+    # this attribute, so getattr defaults to None -> all.)
+    tool = getattr(args, "tool", None)
 
-    section("FFUF fuzz gameplans", "cyan")
-    for path in list_fuzz_plans():
-        plan = load_fuzz_plan(path)
-        subsection(plan.name, "magenta")
-        bullet("Purpose", plan.description)
-        bullet("Operation", plan.operation_category)
-        bullet("Tool", "ffuf")
-        if not args.brief:
-            bullet("Wordlist", plan.wordlist)
-            bullet("Autocalibration", "yes" if plan.autocalibrate else "no")
-
-    section("Hashcat crack gameplans", "cyan")
-    for path in list_builtin_crackplans():
-        crackplan = resolve_crackplan(str(path))
-        subsection(crackplan.name, "magenta")
-        if crackplan.description:
-            bullet("Description", crackplan.description)
-        bullet("Stages", len(crackplan.stages))
-        bullet("Tool", "hashcat")
-        if not args.brief:
-            for row in preview_crackplan(crackplan):
-                print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
-                print(f"     {c('Attack mode:', 'cyan', bold=True)} {row['attack_mode']}")
-                if row.get("wordlist"):
+    if tool in (None, "bust"):
+        section("Feroxbuster bust gameplans", "cyan")
+        for path in list_builtin_gameplans():
+            gameplan = load_gameplan(path)
+            subsection(gameplan.name, "magenta")
+            if gameplan.description:
+                bullet("Description", gameplan.description)
+            bullet("Stages", len(gameplan.stages))
+            if not args.brief:
+                for row in preview_plan("https://example.local", gameplan):
+                    print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
                     print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
-                if row.get("wordlist2"):
-                    print(f"     {c('Wordlist 2:', 'cyan', bold=True)} {row['wordlist2']}")
-                if row.get("rules"):
-                    print(f"     {c('Rules:', 'cyan', bold=True)} {fmt_list(row['rules'])}")
-                if row.get("mask"):
-                    print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
-            blank()
+                    print(f"     {c('Extensions:', 'cyan', bold=True)} {fmt_list(row['extensions'])}")
+                    print(f"     {c('Recursion:', 'cyan', bold=True)} {fmt_recursion(row['recursion'], row['depth'])}")
+                blank()
+
+    if tool in (None, "fuzz"):
+        section("FFUF fuzz gameplans", "cyan")
+        for path in list_fuzz_plans():
+            plan = load_fuzz_plan(path)
+            subsection(plan.name, "magenta")
+            bullet("Purpose", plan.description)
+            bullet("Operation", plan.operation_category)
+            bullet("Tool", "ffuf")
+            if not args.brief:
+                bullet("Wordlist", plan.wordlist)
+                bullet("Autocalibration", "yes" if plan.autocalibrate else "no")
+
+    if tool in (None, "crack"):
+        section("Hashcat crack gameplans", "cyan")
+        for path in list_builtin_crackplans():
+            crackplan = resolve_crackplan(str(path))
+            subsection(crackplan.name, "magenta")
+            if crackplan.description:
+                bullet("Description", crackplan.description)
+            bullet("Stages", len(crackplan.stages))
+            bullet("Tool", "hashcat")
+            if not args.brief:
+                for row in preview_crackplan(crackplan):
+                    print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
+                    print(f"     {c('Attack mode:', 'cyan', bold=True)} {row['attack_mode']}")
+                    if row.get("wordlist"):
+                        print(f"     {c('Wordlist:', 'cyan', bold=True)} {row['wordlist']}")
+                    if row.get("wordlist2"):
+                        print(f"     {c('Wordlist 2:', 'cyan', bold=True)} {row['wordlist2']}")
+                    if row.get("rules"):
+                        print(f"     {c('Rules:', 'cyan', bold=True)} {fmt_list(row['rules'])}")
+                    if row.get("mask"):
+                        print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
+                blank()
 
 
 def cmd_doctor(args) -> None:
@@ -1350,10 +1358,12 @@ for detailed options and examples. Only test systems you are authorized to asses
     gl = gameplans_sub.add_parser(
         "list",
         help="list available gameplans",
-        description="List built-in gameplans, their stages, wordlists, and extensions.",
-        epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list --brief",
+        description="List built-in gameplans, their stages, wordlists, and extensions. "
+        "Pass a tool (bust/fuzz/crack) to show only that pillar's gameplans.",
+        epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list crack\n  obliquity gameplans list bust --brief",
         formatter_class=formatter,
     )
+    gl.add_argument("tool", nargs="?", choices=["bust", "fuzz", "crack"], help="show only this tool's gameplans (default: all)")
     gl.add_argument("--brief", action="store_true", help="show only names and summary fields")
     gl.set_defaults(func=cmd_gameplans_list)
 
