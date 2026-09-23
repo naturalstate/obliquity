@@ -357,7 +357,7 @@ broken. Concretely fixable: pass `--restore` on `crack resume` when a
 reissuing the full build command fresh every time. Not yet built --
 flagged here as a real, scoped follow-up rather than left as an assumption.
 
-### 11. GitHub remote connected, push in progress
+### 11. Commit `2a3a6fd` -- GitHub remote connected, unrelated history merged, pushed
 
 You created a PAT for `github.com/naturalstate/obliquity` and asked me to
 push all commits there, plus asked for a README makeover afterward.
@@ -375,8 +375,32 @@ push all commits there, plus asked for a README makeover afterward.
   you clarified it's private.
 - Cleared the stale cached credential (`git credential-osxkeychain erase`)
   and started `git push -u origin main` in a visible terminal tab so you
-  can enter the new PAT directly into git's own username/password prompt
-  there -- it never has to pass through me. Waiting on that.
+  could enter the new PAT directly into git's own username/password
+  prompt there -- it never had to pass through me.
+- Push still got rejected -- non-fast-forward, meaning the remote had
+  commits this local repo didn't. Turned out to be the repo's real history:
+  16 commits (`7c6d32f` "Initial commit" through `95fb773` "Add
+  Posting-inspired keyboard UI demo") that predate this session --
+  confirmed the repo's file listing matched almost exactly what I started
+  this session with (only `cli.py` differed, by the one `require_host`
+  edit made just before `git init`). You confirmed: you'd downloaded the
+  project as a zip (built by another tool/LLM) rather than cloning it,
+  which is why this local repo had no shared git history with the real
+  upstream despite having near-identical starting content, and asked
+  explicitly to keep the original commits and add this session's on top
+  rather than overwrite them.
+- Merged with `--allow-unrelated-histories` rather than force-pushing (which
+  would have destroyed that 16-commit history). Got 9 real conflicts
+  (`cli.py`, `database.py`, `reporting.py`, `gameplan.py`, `fuzzplan.py`,
+  `README.md`, `pyproject.toml`, two test files) -- checked every single
+  one before resolving, not assumed: each was origin's untouched
+  pre-session baseline vs. this session's evolved version of the same
+  file, with origin's side fully contained in what this session already
+  built (including the TUI demo files, already part of the original zip).
+  Resolved all 9 by taking this session's side. Verified 66/66 tests still
+  pass on the merged tree before committing the merge.
+- Pushed. `git log --graph` now shows both histories properly joined
+  through the merge commit -- nothing discarded, exactly as asked.
 
 ### Explicitly parked, not forgotten
 
