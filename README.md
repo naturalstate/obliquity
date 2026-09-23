@@ -103,6 +103,7 @@ wrapper that adds the project management layer they don't try to be:
 If you've ever manually re-run `common.txt`, then `big.txt`, then remembered
 to add `.bak`/`.old`/`.config` extensions, then lost track of which host got
 which pass -- that's the exact repetition Obliquity is built to manage.
+<!---Expand on this more, my pain points. Re running multiple feroxbuster commands in sequence with 4-6 wordlists for each host in scope and in multiple directories  --->
 
 ## Features
 
