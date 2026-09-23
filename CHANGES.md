@@ -186,23 +186,34 @@ tests are mocked -- nothing in the test suite hits the real internet.
 Your planning doc describes a considerably larger vision than what exists
 today. Here's every section of it, honestly marked against current state,
 grouped into priority tiers. "Done" means it actually works today, not that
-it's planned.
+it's planned. Updated to fold in the second planning-doc drop (Output and
+Reporting, expanded Obliquity Fuzz, expanded Obliquity Crack, Burp Suite
+integration, cross-tool data sharing).
 
 ### Tier 1 -- builds directly on what already exists, moderate effort each
 
 | Feature (from planning doc) | Status | Notes |
 |---|---|---|
-| Host/Application Awareness -- auto-recommend a plan from host metadata (`bust plan app1` suggesting a gameplan from `--server`/`--tech`) | Not built | `host add` already stores `--server`/`--tech`/`--profile`/`--notes`; nothing reads them to *choose* a gameplan yet. `bust plan` only previews a gameplan you already named. This is a mapping table + a recommender function -- the data it needs is already being collected and just sitting unused. |
+| Host/Application Awareness -- auto-recommend a plan from host metadata (`bust plan app1` suggesting a gameplan from `--server`/`--tech`) | Not built | `host add` already stores `--server`/`--tech`/`--profile`/`--notes`; nothing reads them to *choose* a gameplan yet. `bust plan` only previews a gameplan you already named. This is a mapping table + a recommender function -- the data it needs is already being collected and just sitting unused. **This is what we agreed to build next.** |
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
 | Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Partially built | Gameplans already run stages in order and skip completed ones (this *is* the scheduling engine). What's missing is built-in profiles that actually use the escalation the doc describes -- `big.txt` and the raft lists are already in the wordlist catalog (this session) but no built-in gameplan stage references them yet. Low effort now that the downloader exists. |
+| Structured export formats -- JSON, CSV, Markdown alongside the existing HTML report | Not built | `get_findings`/`get_cracked_hashes`/`get_runs` already return the structured rows every one of these formats would need; this is serialization, not new data collection. Cheapest item on the whole list. Raw tool output and SQLite storage (also on the doc's format list) already exist today. |
+| Crack hybrid/combinator attack modes (`?u?l?l?l?l?d?d?d` appended to a wordlist, or combinator of two wordlists) | Not built | `CrackStage.attack_mode` currently only supports `dictionary` (`-a 0`) and `mask` (`-a 3`); hashcat's hybrid (`-a 6`/`-a 7`) and combinator (`-a 1`) modes aren't wired up. Same shape as the existing two modes -- small addition to `hashcat.py`'s `ATTACK_MODES` map and `CrackStage` validation, not a new subsystem. |
 
 ### Tier 2 -- valuable, needs real design decisions, bigger lift
 
 | Feature | Status | Notes |
 |---|---|---|
 | Intensity/profile taxonomy (`quick`/`standard`/`full`/`insane`/`ctf`/`stealth`) | Partially built | Named built-in gameplans exist (`generic-quick`, `aspnet-standard`, etc.) but there's no formal "intensity" concept separate from picking a specific gameplan file. Could start as sugar over gameplan selection, formalize later. |
-| Recursive Discovery -- auto-queue follow-up scans against newly-found interesting directories (`/admin`, `/backup`, `/api`), with `--max-depth`/`--max-jobs-per-host`/`--only-recurse-interesting` | Not built | feroxbuster's own `--depth`/recursion flag is used per-stage, but Obliquity itself doesn't feed findings back into new queued work. This is a real new runner capability -- a feedback loop from findings to the stage queue -- with real termination/noise-control design needed. Biggest lift on this list. |
+| Recursive Discovery -- auto-queue follow-up scans against newly-found interesting directories (`/admin`, `/backup`, `/api`), with `--max-depth`/`--max-jobs-per-host`/`--only-recurse-interesting` | Not built | feroxbuster's own `--depth`/recursion flag is used per-stage, but Obliquity itself doesn't feed findings back into new queued work. This is a real new runner capability -- a feedback loop from findings to the stage queue -- with real termination/noise-control design needed. |
 | Multi-host / `--all-hosts` sequential scanning, friendly host names | Parked (your call) | This is item **B** from earlier -- intentionally held until your gameplan design is settled, since the doc's own examples (`--all-hosts`, `--intensity`) show it's tightly coupled to whatever the gameplan/intensity model ends up being. |
+| HTML report filters -- only-200s, only-403s, unusual content length, new findings only, by host/base-path/wordlist/tool | Not built | The current report is static generated HTML with plain tables, no client-side interactivity. Needs either JS-based filtering baked into the generated page, or a served/dynamic report instead of a flat file -- a real design decision, not just more rows in a table. |
+| Cross-tool findings feedback loop -- e.g. a directory `bust` finds automatically becomes a target `fuzz` tests | Partially built at the storage layer, not automated | `bust` (feroxbuster) and `fuzz` (ffuf) already write into the **same** `findings` table today, so the data is already co-located per project -- but nothing reads bust's results and automatically queues fuzz work from them. The doc's "newly discovered endpoints fed into another tool" is a real orchestration feature still to build, not just a schema change. |
+| Project export/import -- move or reopen a project on another machine | Partially built, partially not | Reopening/resuming a project **on the same machine** already works with zero new code -- there's no "closed" state, `bust resume`/`crack resume`/`fuzz resume` just pick up where they left off via the existing fingerprint model. Moving a project **to a different machine** is not built: `~/.obliquity/projects/<name>` and the single global `obliquity.db` are both tied to one machine today, and there's no `project export`/`project import` that packages a project's DB rows + its `runs/` output directory into a portable bundle. |
+| Hash-type auto-identification (`hashid`/`name-that-hash`-style) instead of requiring `--hash-type` by hand | Not built | `crack job add` requires you to already know the hashcat `-m` mode number. Auto-detecting from the hash's shape (length, charset, prefix) is a bounded, well-understood problem -- could shell out to `hashid`/`name-that-hash` as optional tools, or implement basic pattern matching directly. |
+| Indefinite crack campaign mode (`--campaign full --until-complete`, runtime/budget/GPU-temp limits) | Not built | Current `crack run` executes a fixed, finite crackplan and stops. An open-ended "keep going until X" mode is a different execution model layered on top of the existing staged runner, not a replacement for it. |
+| Recon-tool-sourced fuzz targets (`katana`, `gau`, `waybackurls`, `httpx` feeding endpoint lists into fuzz gameplans) | Not built | `fuzz` today only takes an endpoint/template/request you already know about. Sourcing endpoints from crawling/wayback tools first is several new tool integrations plus a new "route collection" stage type before fuzzing even starts. |
+| Request-based auto fuzz-point detection (parse a raw Burp request, auto-identify query params/POST fields/JSON fields/headers/cookies/path segments/IDs as candidate fuzz points) | Not built | `fuzz run --request` today fuzzes wherever *you* put the `FUZZ` marker in the raw request -- there's no parsing of the request to suggest fuzz points itself. A real, self-contained parsing feature; doesn't require any other tool integration first. |
 
 ### Tier 3 -- larger architectural changes, revisit after Tier 1/2
 
@@ -211,6 +222,31 @@ it's planned.
 | Full profile composition (CMS + tech + auth + noise-tolerance + time-budget as independent, combinable axes, rather than one static JSON file per combination) | Not built | Today a gameplan is a fixed, hand-written JSON file. The doc envisions something closer to a plan *compiler* -- combine "aspnet" + "high intensity" + "unauthenticated" into a generated stage list. Bigger rearchitecture of the gameplan model itself; only worth doing once Tier 1's extension intelligence and Tier 2's intensity taxonomy exist to compose from. |
 | Alternate-tool backends (gobuster/wfuzz/john) | Parked (your call) | Explicitly deferred until bust/fuzz/crack are solid. |
 | Wordlist compiler/deduper (`obliquity wordlists build` -- generate deduplicated `quick`/`standard-delta`/`large-delta` staged lists) | Not built | Still just the README's stated "next obvious feature," unchanged this session. |
+| Burp-compatible export (push discovered paths/findings into a Burp-importable sitemap/project format) | Not built | Needs the actual Burp import format researched and matched correctly before building -- not something to guess at. One-directional (Obliquity -> Burp) piece of the larger Burp integration below; could ship standalone before the rest of it. |
+| Granular crack progress state -- potfile location, remaining-hash count, estimated completion, attack history as first-class tracked fields | Partially built | `crack_jobs`/`crack_runs`/`cracked_hashes` already track job/stage/status/exit-code/cracked results (this session). What's missing is finer-grained per-hash-file progress (how many of N hashes remain right now, not just per-stage completion) and explicit potfile path tracking. |
+| API-endpoint gameplan pipeline (known routes -> JS-discovered routes -> wayback history -> fuzz common paths -> versioned paths -> resource names -> methods -> hidden params -> export, chained end to end) | Not built | This chains several of the Tier 2 items above (recon-tool sourcing, request parsing, hybrid fuzzing) into one gameplan-style flow. Worth doing once those individual pieces exist, not before -- trying to build the whole chain at once would mean building all of Tier 2's fuzz items simultaneously. |
+| cewl/crunch-generated wordlists feeding crack gameplans | Not built | `cewl` (crawl a target, generate a wordlist from its content) and `crunch` (generate wordlists from a mask/charset) are both new tool integrations. Straightforward adapters individually (same shape as the hashcat adapter), but there's no target-content-crawling capability in Obliquity yet for `cewl` to run against. |
+
+### Tier 4 -- Burp Suite integration (a separate subsystem, not a CLI feature)
+
+The doc's Burp integration is categorically different from everything else on
+this list: it requires committing to a **Burp extension** (a separate
+codebase in whatever language/SDK Burp extensions use), plus a **local HTTP
+API server running inside Obliquity** for that extension to talk to, plus a
+stable request/response contract between them. Every other item above is
+"add a feature to the existing CLI/DB"; this is "build and maintain a second
+piece of software with its own packaging and versioning." Not recommending
+this until the CLI-side tool (bust/fuzz/crack) is mature, per your own
+"we'll add the backup tools when we're done with the tool" instruction on a
+smaller version of the same principle.
+
+- **Burp -> Obliquity**: send a host/request/sitemap/parameters/auth context
+  from Burp into Obliquity to seed a project and build a gameplan from it.
+- **Obliquity -> Burp**: push discovered paths into Burp's sitemap, send
+  interesting requests to Repeater, export findings as a Burp-importable
+  project. (The plain Burp-compatible *export* piece, without the live
+  extension/API bridge, is listed separately in Tier 3 above and could ship
+  first, standalone.)
 
 ### Already solid (from the doc, done before or during this session)
 
@@ -222,6 +258,14 @@ it's planned.
   hash type + attack params. Completed stages are skipped; resume works.
 - JSON gameplans, sequential staged execution, raw output archiving, JSONL
   parsing, SQLite storage, unified HTML reporting -- all three pillars now.
+- Shared storage across tools: bust and fuzz findings already live in the
+  same `findings` table per project (not yet an active feedback loop, but
+  the "one shared DB per project" foundation the doc asks for is real).
+- Resuming a project after walking away from it: already works today with
+  no explicit close/reopen step, via the same fingerprint-and-skip model --
+  just re-run `bust resume`/`crack resume`/`fuzz resume` whenever you come
+  back to it. (Moving that project to a *different machine* is not solved
+  yet -- see the project export/import row in Tier 2.)
 
 ---
 
