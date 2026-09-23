@@ -541,6 +541,27 @@ pointless -- it can't know the target, wordlist size, or network.
 
 79 tests passing.
 
+### 18. `gameplans list` tool filter
+
+You asked for a way to list just one pillar's gameplans. Added an optional
+positional: `obliquity gameplans list crack` (or `bust`/`fuzz`) shows only
+that section; no argument still shows all three. argparse `choices`
+validation rejects anything else with a clear error.
+
+### 19. Corrected best64 vs best66 (my earlier mistake)
+
+You flagged that you'd never heard of best66.rule. You were right to: it's
+a rename that only exists on hashcat's unreleased `master` branch. Every
+stable hashcat release -- including v6.2.6, what `apt`/`brew`/`dnf`/
+`pacman` install and what Kali ships -- has `best64.rule`, not best66. My
+earlier change of `standard.json` from best64 -> best66 ("upstream renamed
+it") was true about the dev branch but wrong in practice: it pointed the
+default gameplan at a file that doesn't exist on any real install. Reverted
+`standard.json` to `best64.rule`, removed the `best66` catalog entry
+entirely (nothing references it and it's dev-branch-only), and kept
+`hashcat-best64-rules` (pinned to the v6.2.6 tag) as the canonical rules
+download. No best66 references remain in shipped code.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

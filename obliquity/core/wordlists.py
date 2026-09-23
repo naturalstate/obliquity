@@ -76,15 +76,8 @@ WORDLIST_CATALOG: list[WordlistEntry] = [
         archive_member="rockyou.txt",
     ),
     WordlistEntry(
-        name="hashcat-best66-rules",
-        description="hashcat's best66.rule (current upstream successor to best64.rule)",
-        category="crack-rules",
-        url="https://raw.githubusercontent.com/hashcat/hashcat/master/rules/best66.rule",
-        match_suffix="hashcat/rules/best66.rule",
-    ),
-    WordlistEntry(
         name="hashcat-best64-rules",
-        description="hashcat's classic best64.rule (from the v6.2.6 release; the widely-referenced ruleset)",
+        description="hashcat's best64.rule (ships with stable hashcat / Kali at /usr/share/hashcat/rules/)",
         category="crack-rules",
         url="https://raw.githubusercontent.com/hashcat/hashcat/v6.2.6/rules/best64.rule",
         match_suffix="hashcat/rules/best64.rule",

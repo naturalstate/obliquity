@@ -520,7 +520,7 @@ obliquity bust run acme https://app.acme.com \
 <td>
 
 - `quick-dictionary` *(single rockyou pass)*
-- `standard` *(rockyou, +best66 rules, +policy mask)*
+- `standard` *(rockyou, +best64 rules, +policy mask)*
 - `rules-basic` *(rockyou -> +best64 -> +best64 stacked)*
 - `onerule-all` *(rockyou -> +OneRuleToRuleThemAll)*
 - `onerule-still` *(rockyou -> +OneRuleToRuleThemStill)*

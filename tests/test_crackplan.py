@@ -47,7 +47,7 @@ class CrackStageValidationTests(TestCase):
 
     def test_rules_rejected_on_non_dictionary_mode(self) -> None:
         with self.assertRaises(ValueError):
-            CrackStage(name="bad", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d", rules="best66.rule")
+            CrackStage(name="bad", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d", rules="best64.rule")
 
     def test_string_rule_normalized_to_list(self) -> None:
         stage = CrackStage(name="ok", attack_mode="dictionary", wordlist="w.txt", rules="best64.rule")
