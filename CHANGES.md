@@ -162,11 +162,57 @@ in the terminal, confirmed the real 4,751-line file landed, `wordlists
 status` no longer listed it as missing, and `bust plan` for `generic-quick`
 picked up the local copy automatically with zero config changes.
 
+### 6. Commit `951d8f0` -- unified scan history log, and warn instead of silently re-skipping
+
+You asked for two related things: an easy-to-read history of what's been
+scanned, and a behavior change so that trying to rerun something already
+scanned stops and warns instead of just quietly skipping it -- offering a
+sensible alternative to run instead, acceptable with a plain `y`.
+
+- **`obliquity history <project>`** (`--tool`/`--status`/`--limit`) -- one
+  readable log across all three tools (bust/fuzz/crack), which didn't exist
+  before: `runs` only ever showed bust/fuzz (they already share the `runs`
+  table), and crack has its own separate `crack_runs` table with no unified
+  view. `get_history()` in `database.py` `UNION ALL`s both, joined back to
+  the host or crack job for a target label, with a per-run finding/cracked-
+  hash count via a correlated subquery.
+  **Real bug hit building this, not guessed:** the query errored with
+  `2nd ORDER BY term does not match any column in the result set`. Root
+  cause: once the query has JOINs, SQLite's ORDER BY resolution for a
+  compound SELECT gets confused between the unqualified `id` output column
+  and `hosts.id`/`crack_jobs.id` sitting in the FROM clause (even though
+  they're not selected), and refuses to order by it. Fixed by aliasing to
+  `run_id` explicitly. Confirmed by bisecting the query down to a minimal
+  repro before touching the fix.
+- **Warn-and-escalate instead of silent skip**: `bust run`/`crack run` (never
+  `resume`, `--force`, `--dry-run`, or when stdin isn't a real interactive
+  terminal -- so scripts/CI keep working exactly as before) now check
+  whether the exact gameplan/crackplan has already fully completed against
+  the target *before* doing anything else. If so, they stop, show when it
+  last finished and how many findings/cracked-hashes it produced, and offer
+  the next step up a small escalation ladder (`generic-quick` ->
+  `generic-standard`, `quick-dictionary` -> `standard`) -- accept with a
+  plain `y`. Decline that (or there's no escalation defined) and it falls
+  back to an explicit "rerun anyway?" confirmation, equivalent to `--force`.
+  Decline both and the command stops with guidance rather than silently
+  doing nothing. This escalation ladder is intentionally small and
+  hardcoded for now, not the full intensity/composition system from the
+  Part 2 roadmap below -- just enough to be genuinely useful today.
+- Asked before running anything live in the terminal per usual, but hit the
+  6-tab terminal cap with no tool available to close one, and you were away
+  from the machine -- deferred the live interactive-prompt demo rather than
+  fake it or skip verification entirely. The 10 new tests do exercise every
+  branch of the prompt logic (accept escalation / decline to rerun-anyway /
+  decline both and stop / `--force` bypass / non-interactive bypass) via
+  mocked `input()`, so the behavior is verified even without the live
+  walkthrough.
+
 ### Test coverage added this session
 
-19 -> 40 passing tests. New files: `tests/test_hashcat.py`,
-`tests/test_crackplan.py`, `tests/test_wordlists.py`. All network calls in
-tests are mocked -- nothing in the test suite hits the real internet.
+19 -> 50 passing tests. New files: `tests/test_hashcat.py`,
+`tests/test_crackplan.py`, `tests/test_wordlists.py`, `tests/test_history.py`,
+`tests/test_escalation.py`. All network calls in tests are mocked -- nothing
+in the test suite hits the real internet.
 
 ### Explicitly parked, not forgotten
 
@@ -196,7 +242,7 @@ integration, cross-tool data sharing).
 |---|---|---|
 | Host/Application Awareness -- auto-recommend a plan from host metadata (`bust plan app1` suggesting a gameplan from `--server`/`--tech`) | Not built | `host add` already stores `--server`/`--tech`/`--profile`/`--notes`; nothing reads them to *choose* a gameplan yet. `bust plan` only previews a gameplan you already named. This is a mapping table + a recommender function -- the data it needs is already being collected and just sitting unused. **This is what we agreed to build next.** |
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
-| Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Partially built | Gameplans already run stages in order and skip completed ones (this *is* the scheduling engine). What's missing is built-in profiles that actually use the escalation the doc describes -- `big.txt` and the raft lists are already in the wordlist catalog (this session) but no built-in gameplan stage references them yet. Low effort now that the downloader exists. |
+| Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Partially built | Gameplans already run stages in order and skip completed ones (this *is* the scheduling engine). A first, narrow escalation step now exists (`generic-quick` -> `generic-standard`, `quick-dictionary` -> `standard`, offered when a plan's already fully done -- see the history/warn-and-escalate feature). Still missing: the doc's full common -> big -> raft-medium -> raft-large -> CMS-specific chain as actual built-in gameplan stages. `big.txt` and the raft lists are already in the wordlist catalog; low effort now that the downloader exists. |
 | Structured export formats -- JSON, CSV, Markdown alongside the existing HTML report | Not built | `get_findings`/`get_cracked_hashes`/`get_runs` already return the structured rows every one of these formats would need; this is serialization, not new data collection. Cheapest item on the whole list. Raw tool output and SQLite storage (also on the doc's format list) already exist today. |
 | Crack hybrid/combinator attack modes (`?u?l?l?l?l?d?d?d` appended to a wordlist, or combinator of two wordlists) | Not built | `CrackStage.attack_mode` currently only supports `dictionary` (`-a 0`) and `mask` (`-a 3`); hashcat's hybrid (`-a 6`/`-a 7`) and combinator (`-a 1`) modes aren't wired up. Same shape as the existing two modes -- small addition to `hashcat.py`'s `ATTACK_MODES` map and `CrackStage` validation, not a new subsystem. |
 
@@ -266,6 +312,13 @@ smaller version of the same principle.
   just re-run `bust resume`/`crack resume`/`fuzz resume` whenever you come
   back to it. (Moving that project to a *different machine* is not solved
   yet -- see the project export/import row in Tier 2.)
+- Scan history log: `obliquity history <project>` -- a unified, readable log
+  across bust/fuzz/crack (the doc's Output/Reporting section asks for "scan
+  history" and "jobs completed" as things the HTML dashboard should show;
+  this covers the same ground from the CLI side).
+- Stopping instead of silently re-doing already-completed work: rerunning an
+  already-fully-completed gameplan/crackplan now warns and asks rather than
+  either silently skipping or silently rerunning -- see the same commit.
 
 ---
 
