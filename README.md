@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/user-attachments/assets/a7bae8da-558d-4892-9e03-49b0d2b0b9f2" alt="Obliquity" height="1442" alt="obliquity_screenshot" />
+<img src="docs/images/banner.svg" alt="Obliquity" width="720">
 
 
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -46,7 +46,9 @@ project-aware, resumable, and reported in one place instead of three.
   Screenshot placeholder. Drop a terminal capture of `obliquity bust run`
   or the HTML report at docs/images/demo.png and this will pick it up.
 -->
-<img src="docs/images/demo.png" alt="Obliquity demo screenshot -- add docs/images/demo.png" width="720">
+
+<img src="https://github.com/user-attachments/assets/a7bae8da-558d-4892-9e03-49b0d2b0b9f2" alt="Obliquity" height="1442" alt="obliquity_screenshot" />
+
 
 <sub><em>Screenshot placeholder -- add <code>docs/images/demo.png</code> (a terminal run or the HTML report) and this shows it.</em></sub>
 
