@@ -402,6 +402,56 @@ push all commits there, plus asked for a README makeover afterward.
 - Pushed. `git log --graph` now shows both histories properly joined
   through the merge commit -- nothing discarded, exactly as asked.
 
+### 12. Commit `624795b` -- README makeover
+
+You asked for a "trendy popular README" makeover: colored boxes at top
+showing what it's built with, HTML/CSS graphics, ASCII art (or a
+placeholder if not), thorough usage docs with syntax-highlighted code
+examples, a future-features section, and an explanation of Python virtual
+environments including how to make activation persistent.
+
+- **On "HTML/CSS graphics"**: GitHub's markdown renderer strips inline
+  `<style>` blocks and most `style="..."` attributes for security, so
+  literal CSS-styled boxes don't actually render there -- worth knowing
+  before expecting them to work. Built two things that do genuinely
+  render: `docs/images/banner.svg` (a real SVG graphic using the same
+  rainbow gradient as the CLI's own terminal banner, three pill shapes
+  for bust/fuzz/crack), and a row of shields.io badges (Python version,
+  license, status, test count, one per underlying tool) -- this is what
+  "colored boxes at the top" means in a README that has to render on
+  GitHub specifically.
+- The real ASCII art banner (copied verbatim from `cli.py`'s `BANNER`
+  constant, not redrawn) in a collapsible section. A screenshot
+  placeholder pointing at `docs/images/demo.png` with a caption -- no real
+  screenshot exists to embed from this session, so this is left as the
+  placeholder you asked for rather than faked.
+- Full usage rewrite with a table of contents. **Caught a real bug before
+  it shipped**: three headings originally used " -- " (double hyphen, this
+  document's own em-dash convention) in the heading text. GitHub's anchor
+  slugger doesn't collapse that the way a human would guess -- a heading
+  literally reading "bust -- content discovery" slugs to
+  `bust----content-discovery` (four hyphens: one from each space plus the
+  two literal ones), not the two-hyphen anchor a naive guess would
+  produce. Verified this by working through the actual slug algorithm
+  character-by-character rather than assuming, then reworded those three
+  headings (colon instead of double-hyphen) to sidestep the ambiguity
+  entirely instead of hand-deriving exact hyphen counts that could drift
+  again the next time a heading changes.
+- New "Using a virtual environment" section: why one's needed (PEP 668
+  `externally-managed-environment` errors on modern Python installs, plus
+  plain dependency isolation between projects), the "activate once per
+  terminal session, not once per command" point from earlier this
+  session, and three concrete ways to make it persistent --
+  `direnv` (auto-activate on `cd`), `pipx` (no activation step, ever), or
+  a shell alias.
+- New Roadmap section, condensing `CHANGES.md`'s own tiered breakdown --
+  including the two items this session's resume investigation identified
+  (hashcat `--restore`, hybrid/combinator attack modes) so they're visible
+  from the README too, not buried only here.
+- Nothing from the previous README was dropped in the rewrite -- the
+  Textual UI demo section moved into a collapsed `<details>` block instead
+  of being cut.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
