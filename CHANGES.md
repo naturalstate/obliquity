@@ -296,11 +296,13 @@ with correct counts.
 
 ### Test coverage added this session
 
-19 -> 66 passing tests. New files: `tests/test_hashcat.py`,
+19 -> 76 passing tests. New files: `tests/test_hashcat.py`,
 `tests/test_crackplan.py`, `tests/test_wordlists.py`, `tests/test_history.py`,
 `tests/test_escalation.py`, `tests/test_recommend.py`,
-`tests/test_export_formats.py`. All network calls in tests are mocked --
-nothing in the test suite hits the real internet.
+`tests/test_export_formats.py` (plus hybrid/combinator and `--restore`
+command-construction tests added to `test_hashcat.py`/`test_crackplan.py`).
+All network calls in tests are mocked -- nothing in the test suite hits the
+real internet.
 
 ### 10. Investigation -- does resume actually work, for real, across all three tools?
 
@@ -452,6 +454,52 @@ environments including how to make activation persistent.
   Textual UI demo section moved into a collapsed `<details>` block instead
   of being cut.
 
+### 13. Commit `2e84fbd` -- banner redesign + pain-point expansion
+
+You weren't happy with the first plain banner and gave a reference image
+(the "codeLearn" two-column layout) to match. Rebuilt `docs/images/
+banner.svg` into that structure: wordmark + tagline + tool pills
+(feroxbuster/ffuf/hashcat/SecLists/Burp) + a gameplan progress bar on the
+left, and a fake terminal on the right showing a simulated `obliquity bust
+run` that highlights a high-value `/backup.zip` find. Also expanded the
+"What is Obliquity?" section into a concrete "pain it solves" writeup
+(4-6 wordlist passes per host, multiplied across hosts and discovered
+subdirectories), replacing the inline TODO comment you left on GitHub.
+Pulled your direct-on-GitHub edits (real screenshot + that comment) down
+first with a fast-forward before touching anything.
+
+### 14. Commit `4274713` -- hybrid + combinator attack modes
+
+The crack feature only spoke hashcat's dictionary (`-a 0`) and mask
+(`-a 3`) modes. Added the other three common ones: combinator (`-a 1`,
+two wordlists glued together, needs a new `wordlist2` field),
+hybrid-wordlist-mask (`-a 6`, word + mask -> "Summer2024" shapes), and
+hybrid-mask-wordlist (`-a 7`). Positional-arg order after the hash file
+is mode-specific and matters (6 is wordlist-then-mask, 7 is
+mask-then-wordlist) -- handled explicitly. `CrackStage` gained per-mode
+required-field validation and a guard rejecting `-r` rules on
+non-dictionary modes (hashcat only supports rule files with `-a 0`). Two
+built-in crackplans: `hybrid-standard` (rockyou-based) and
+`smoke-test-hybrid` (bundled wordlist, no deps). Verified live: a hybrid
+stage cracked an MD5 of `letmein99` (`letmein` + `?d?d`) end to end.
+
+### 15. Commit `7bb13b2` -- hashcat `--restore` resume (fixing the gap from #10)
+
+Built the fix investigation #10 identified. Normal runs now write their
+checkpoint to an Obliquity-controlled `--restore-file-path` (hashcat's
+default location is build-specific and, on this Homebrew build, inside the
+Cellar where `brew upgrade` would wipe it). When that `.restore` file
+exists and we're not force-rerunning, `crack` builds a minimal `hashcat
+--restore --restore-file-path ... --session ...` command instead of the
+full attack (hashcat reads the rest from the checkpoint; reissuing the
+full args alongside `--restore` errors). `--force` wipes a stale
+checkpoint first -- but never on `--dry-run`, since previewing must not
+delete. Verified live against hashcat 7.1.2: interrupted a 9-char mask
+mid-keyspace, confirmed the `.restore` landed at our path, and that
+re-running produced "hashcat (v7.1.2) starting in restore mode" with no
+stale-session errors. Only crack gets this -- bust's feroxbuster runs
+`--no-state` and ffuf has no checkpointing.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
@@ -480,8 +528,8 @@ integration, cross-tool data sharing).
 |---|---|---|
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
 | Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Mostly built for the generic case | The doc's full chain now exists as real built-in gameplans: `generic-quick` (common) -> `generic-standard` (+big, +dirbuster-medium, +backup/config) -> `generic-deep` (+raft-medium, +raft-large recursive), each offered automatically via the warn-and-escalate flow when the previous one's fully done. Still missing: the CMS/tech-specific tail end of the doc's sequence (e.g. an aspnet/php-specific deep tier) -- only the generic and crack (`quick-dictionary` -> `standard`) ladders exist so far. |
-| Crack hybrid/combinator attack modes (`?u?l?l?l?l?d?d?d` appended to a wordlist, or combinator of two wordlists) | Not built, approved | `CrackStage.attack_mode` currently only supports `dictionary` (`-a 0`) and `mask` (`-a 3`); hashcat's hybrid (`-a 6`/`-a 7`) and combinator (`-a 1`) modes aren't wired up. Same shape as the existing two modes -- small addition to `hashcat.py`'s `ATTACK_MODES` map and `CrackStage` validation, not a new subsystem. **You said yes to building this.** |
-| hashcat mid-run resume via `--restore` (real, not just stage-skip) | Not built, identified | Confirmed live (see Part 1, investigation #10): hashcat writes a real `.restore` checkpoint periodically, but `crack resume` never passes `--restore` to read it back -- it silently reruns the whole stage from 0%. Fix: pass `--restore` when a `.restore` file already exists for that stage's session name, instead of reissuing the full build command. Doesn't apply to bust (feroxbuster's checkpointing is explicitly disabled via `--no-state`) or fuzz (ffuf has no native checkpoint capability to plug into). |
+| ~~Crack hybrid/combinator attack modes~~ | **Done (commit `4274713`)** | combinator (`-a 1`), hybrid-wordlist-mask (`-a 6`), hybrid-mask-wordlist (`-a 7`) all wired up, with a `wordlist2` field, per-mode validation, and two built-in crackplans (`hybrid-standard`, `smoke-test-hybrid`). Verified live cracking `letmein99`. |
+| ~~hashcat mid-run resume via `--restore`~~ | **Done (commit `7bb13b2`)** | `crack resume` now writes checkpoints to an Obliquity-controlled path and re-invokes `hashcat --restore` when one exists, resuming mid-keyspace instead of restarting. Verified live ("starting in restore mode"). Still N/A for bust (`--no-state`) and fuzz (no native checkpointing). |
 
 ### Tier 2 -- valuable, needs real design decisions, bigger lift
 

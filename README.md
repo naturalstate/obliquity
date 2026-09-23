@@ -349,13 +349,23 @@ obliquity crack plan acme --gameplan quick-dictionary
 obliquity crack run acme --gameplan quick-dictionary --dry-run
 obliquity crack run acme --gameplan standard --open-report
 
-# Resume later
+# Resume later -- resumes hashcat mid-keyspace from its own checkpoint
 obliquity crack resume acme --gameplan standard
 ```
+
+Crackplan stages support all five common hashcat attack modes:
+`dictionary` (`-a 0`), `mask` (`-a 3`), `combinator` (`-a 1`, two
+wordlists glued together), and the two hybrids `hybrid-wordlist-mask`
+(`-a 6`, e.g. a real word + `?d?d?d?d`) and `hybrid-mask-wordlist`
+(`-a 7`). See `hybrid-standard` for a policy-shaped example.
 
 > A hashcat exit code of `1` ("exhausted this wordlist/mask, hashes
 > remain") is treated as a normal stage completion, not a failure -- that's
 > what lets a crackplan fall through to its next stage automatically.
+>
+> Unlike bust/fuzz, `crack resume` genuinely resumes an interrupted stage
+> from hashcat's own `.restore` checkpoint (mid-keyspace), not just from the
+> last completed stage.
 
 ```bash
 obliquity doctor
@@ -458,7 +468,9 @@ obliquity bust run acme https://app.acme.com \
 
 - `quick-dictionary` *(single rockyou pass)*
 - `standard` *(rockyou, +best66 rules, +policy mask)*
+- `hybrid-standard` *(rockyou + digit/special masks -- "Summer2024" shapes)*
 - `smoke-test` *(bundled wordlist, no SecLists needed)*
+- `smoke-test-hybrid` *(bundled wordlist + mask, no SecLists needed)*
 
 </td>
 </tr>
@@ -495,12 +507,12 @@ there's no escalation defined yet) and it falls back to an explicit "rerun
 anyway?" confirmation. This only triggers in a real interactive terminal;
 scripts and `--force`/`--dry-run` runs are unaffected.
 
-> **Being upfront about a real limitation**: this is *stage-level* resume,
-> not *mid-scan* resume. `bust`'s feroxbuster runs with `--no-state`, so an
-> interrupted stage restarts its wordlist from the beginning rather than
-> continuing where it left off (findings already found aren't lost, but
-> requests do get resent). `crack`'s hashcat has real mid-run checkpoint
-> capability that Obliquity doesn't use yet either -- see the roadmap.
+> **One nuance worth knowing**: for `bust` this is *stage-level* resume, not
+> *mid-scan*. feroxbuster runs with `--no-state`, so an interrupted stage
+> restarts its wordlist from the beginning (findings already found aren't
+> lost, but requests get resent); ffuf has no native checkpointing either.
+> `crack` is the exception -- it resumes an interrupted stage mid-keyspace
+> from hashcat's own `.restore` checkpoint.
 
 ## Data location
 
@@ -540,12 +552,6 @@ exploration for a possible future dashboard.
 Obliquity intentionally keeps the current design simple and honest about
 what it doesn't do yet. Roughly in the order they'd get built:
 
-- **hashcat mid-run resume** -- pass `--restore` on `crack resume` when a
-  checkpoint already exists, instead of silently redoing the whole stage
-- **Crack hybrid/combinator attack modes** -- hashcat's `-a 1`
-  (combinator: glue two wordlists together) and `-a 6`/`-a 7` (hybrid:
-  wordlist + mask, e.g. `Summer` + `?d?d?d?d`) aren't wired up yet, only
-  plain dictionary and mask attacks
 - **Extension Intelligence** -- avoid double-appending extensions to
   wordlist entries that already have one baked in
 - **Host/Application Awareness composition** -- combine tech + intensity +
