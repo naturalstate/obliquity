@@ -268,13 +268,39 @@ Verified live: `gameplans list --brief` shows the new profile,
 `wordlists status` now flags raft-medium/raft-large/dirbuster-medium as
 needed, `bust plan --gameplan generic-deep` previews correctly.
 
+### 9. Commit `b3f86f9` -- JSON/CSV/Markdown report formats
+
+Third "continue adding features" pass, next clean Tier 1 item: the
+planning doc's Output and Reporting section explicitly lists JSON, CSV,
+and Markdown as formats alongside HTML -- pure serialization of data
+already flowing through `get_findings`/`get_cracked_hashes`/`get_runs`,
+no new data collection needed.
+
+- `generate_json`/`generate_csv`/`generate_markdown` in `reporting.py`.
+  `generate_csv` takes any single result set (findings, cracked_hashes,
+  runs, crack_runs) rather than trying to force four differently-shaped
+  tables into one CSV -- one file per dataset via `--kind`.
+  `generate_markdown` escapes literal `|` and newlines in cell values so a
+  URL or path containing either doesn't corrupt the table structure --
+  covered by a dedicated test, not just assumed safe.
+- CLI: `report json`, `report csv [--kind findings|cracked-hashes|runs|
+  crack-runs]`, `report markdown`, alongside the existing `report html`.
+  Factored the shared data-gathering out of `write_html_report` into
+  `gather_report_data()` so the three new formats don't duplicate it.
+
+Verified live against the `demo` project's real data (4 findings, 1
+cracked hash, 2 runs across bust+fuzz): JSON has the right shape and
+parses; both findings and cracked-hashes CSVs round-trip correctly
+through Python's own `csv.DictReader`; Markdown renders valid tables
+with correct counts.
+
 ### Test coverage added this session
 
-19 -> 61 passing tests. New files: `tests/test_hashcat.py`,
+19 -> 66 passing tests. New files: `tests/test_hashcat.py`,
 `tests/test_crackplan.py`, `tests/test_wordlists.py`, `tests/test_history.py`,
-`tests/test_escalation.py`, `tests/test_recommend.py`. All network calls in
-tests are mocked -- nothing
-in the test suite hits the real internet.
+`tests/test_escalation.py`, `tests/test_recommend.py`,
+`tests/test_export_formats.py`. All network calls in tests are mocked --
+nothing in the test suite hits the real internet.
 
 ### Explicitly parked, not forgotten
 
@@ -304,7 +330,6 @@ integration, cross-tool data sharing).
 |---|---|---|
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
 | Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Mostly built for the generic case | The doc's full chain now exists as real built-in gameplans: `generic-quick` (common) -> `generic-standard` (+big, +dirbuster-medium, +backup/config) -> `generic-deep` (+raft-medium, +raft-large recursive), each offered automatically via the warn-and-escalate flow when the previous one's fully done. Still missing: the CMS/tech-specific tail end of the doc's sequence (e.g. an aspnet/php-specific deep tier) -- only the generic and crack (`quick-dictionary` -> `standard`) ladders exist so far. |
-| Structured export formats -- JSON, CSV, Markdown alongside the existing HTML report | Not built | `get_findings`/`get_cracked_hashes`/`get_runs` already return the structured rows every one of these formats would need; this is serialization, not new data collection. Cheapest item on the whole list. Raw tool output and SQLite storage (also on the doc's format list) already exist today. |
 | Crack hybrid/combinator attack modes (`?u?l?l?l?l?d?d?d` appended to a wordlist, or combinator of two wordlists) | Not built | `CrackStage.attack_mode` currently only supports `dictionary` (`-a 0`) and `mask` (`-a 3`); hashcat's hybrid (`-a 6`/`-a 7`) and combinator (`-a 1`) modes aren't wired up. Same shape as the existing two modes -- small addition to `hashcat.py`'s `ATTACK_MODES` map and `CrackStage` validation, not a new subsystem. |
 
 ### Tier 2 -- valuable, needs real design decisions, bigger lift
@@ -364,7 +389,8 @@ smaller version of the same principle.
   extra args (bust), and the crack-specific equivalent keyed on hash file +
   hash type + attack params. Completed stages are skipped; resume works.
 - JSON gameplans, sequential staged execution, raw output archiving, JSONL
-  parsing, SQLite storage, unified HTML reporting -- all three pillars now.
+  parsing, SQLite storage, unified HTML/JSON/CSV/Markdown reporting -- all
+  three pillars now.
 - Shared storage across tools: bust and fuzz findings already live in the
   same `findings` table per project (not yet an active feedback loop, but
   the "one shared DB per project" foundation the doc asks for is real).

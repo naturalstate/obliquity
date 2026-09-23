@@ -149,10 +149,14 @@ command will use it automatically:
 obliquity bust run acme --gameplan aspnet-standard
 ```
 
-Generate report:
+Generate a report. HTML is the default/richest format; JSON, CSV, and
+Markdown are also available for further processing or sharing:
 
 ```bash
 obliquity report html acme
+obliquity report json acme
+obliquity report csv acme --kind cracked-hashes   # or findings, runs, crack-runs
+obliquity report markdown acme
 ```
 
 Generate and open the report automatically after a successful scan:
