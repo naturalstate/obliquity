@@ -104,12 +104,25 @@ def run_crackplan(
 
         raw_output, result_output = stage_paths(project, job, plan, stage.name)
         session = safe_name(f"{project['name']}-{job['id']}-{plan.name}-{stage.name}")
+        restore_file = raw_output.parent / f"{safe_name(stage.name)}.restore"
+
+        # hashcat leaves a .restore checkpoint behind only when a run was
+        # interrupted (it deletes it on clean completion). If one exists and
+        # we're not force-rerunning, resume from it instead of starting over.
+        # With --force, wipe any stale checkpoint so the rerun really is fresh
+        # (but never on a dry-run -- previewing shouldn't delete anything).
+        if force and restore_file.exists() and not dry_run:
+            restore_file.unlink()
+        resuming = restore_file.exists() and not force
+
         cmd = hashcat.build_command(
             hash_file,
             hash_type,
             stage,
             result_output,
             session=session,
+            restore_file=restore_file,
+            restore=resuming,
             extra_args=extra_args,
         )
         command = quoted_command(cmd)
@@ -135,6 +148,7 @@ def run_crackplan(
             "rules": stage.rules,
             "mask": stage.mask,
             "estimated_minutes": stage.estimated_minutes,
+            "resuming": resuming,
             "command": command,
             "result_output": str(result_output),
             "raw_output": str(raw_output),

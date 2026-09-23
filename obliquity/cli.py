@@ -488,6 +488,8 @@ def print_crack_event(event: dict) -> None:
     if action == "starting":
         subsection(f"Running {stage_label}", "green")
         _crack_stage_fields()
+        if event.get("resuming"):
+            bullet("Resuming", "from a previous hashcat checkpoint (--restore)", color="green")
         bullet("Raw output", event.get("raw_output"))
         bullet("Cracked output", event.get("result_output"))
         command_block(event.get("command", ""))

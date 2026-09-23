@@ -31,10 +31,23 @@ def build_command(
     output: Path,
     *,
     session: str | None = None,
+    restore_file: Path | None = None,
+    restore: bool = False,
     extra_args: list[str] | None = None,
 ) -> list[str]:
     if stage.attack_mode not in ATTACK_MODES:
         raise ValueError(f"unsupported hashcat attack mode: {stage.attack_mode}")
+
+    # Resuming: hashcat reads every other parameter from the restore file, so
+    # the command must be minimal -- reissuing the full arg list alongside
+    # --restore makes hashcat error or ignore it.
+    if restore:
+        if restore_file is None:
+            raise ValueError("restore=True requires a restore_file")
+        cmd = ["hashcat", "--restore", "--restore-file-path", str(restore_file)]
+        if session:
+            cmd += ["--session", session]
+        return cmd
 
     cmd = [
         "hashcat",
@@ -49,6 +62,11 @@ def build_command(
 
     if session:
         cmd += ["--session", session]
+
+    # Write the checkpoint to a path Obliquity controls, so `crack resume`
+    # can find it later regardless of hashcat's build-specific default location.
+    if restore_file is not None:
+        cmd += ["--restore-file-path", str(restore_file)]
 
     if stage.rules:
         cmd += ["-r", stage.rules]

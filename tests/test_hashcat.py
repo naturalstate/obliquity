@@ -58,6 +58,31 @@ class BuildCommandTests(TestCase):
         self.assertEqual(command[command.index("-a") + 1], "7")
         self.assertEqual(command[-3:], ["hashes.txt", "?d?d", "w.txt"])
 
+    def test_restore_file_path_added_to_normal_run(self) -> None:
+        stage = CrackStage(name="dict", attack_mode="dictionary", wordlist="w.txt")
+        command = build_command("hashes.txt", 0, stage, Path("out.txt"), restore_file=Path("s.restore"))
+
+        self.assertEqual(command[command.index("--restore-file-path") + 1], "s.restore")
+
+    def test_restore_produces_minimal_command(self) -> None:
+        stage = CrackStage(name="dict", attack_mode="dictionary", wordlist="w.txt")
+        command = build_command(
+            "hashes.txt", 0, stage, Path("out.txt"),
+            session="sess", restore_file=Path("s.restore"), restore=True,
+        )
+
+        self.assertIn("--restore", command)
+        self.assertEqual(command[command.index("--restore-file-path") + 1], "s.restore")
+        # must NOT reissue the full attack args -- hashcat reads those from the file
+        self.assertNotIn("-a", command)
+        self.assertNotIn("-m", command)
+        self.assertNotIn("w.txt", command)
+
+    def test_restore_without_restore_file_raises(self) -> None:
+        stage = CrackStage(name="dict", attack_mode="dictionary", wordlist="w.txt")
+        with self.assertRaises(ValueError):
+            build_command("hashes.txt", 0, stage, Path("out.txt"), restore=True)
+
 
 class ParseOutputTests(TestCase):
     def test_parses_hash_colon_plaintext_lines(self) -> None:
