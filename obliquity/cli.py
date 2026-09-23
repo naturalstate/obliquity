@@ -166,6 +166,42 @@ CRACKPLAN_ESCALATION = {
 }
 
 
+# Host/Application Awareness: when `--gameplan` isn't given, recommend a
+# built-in gameplan from the --tech/--server/--profile metadata already
+# collected by `host add`, instead of always defaulting to generic-quick.
+# Checked in this order (most to least specific); not the full profile-
+# composition system from CHANGES.md's roadmap -- a lookup table over the
+# built-ins that already exist, extensible as more get added.
+TECH_GAMEPLAN = {
+    "aspnet": "aspnet-standard",
+    "php": "php-standard",
+}
+SERVER_GAMEPLAN = {
+    "iis": "aspnet-standard",
+}
+PROFILE_GAMEPLAN = {
+    "aspnet": "aspnet-standard",
+    "php": "php-standard",
+    "api": "api-quick",
+}
+DEFAULT_GAMEPLAN = "generic-quick"
+
+
+def recommend_gameplan(host) -> tuple[str, str | None]:
+    """Returns (gameplan_name, reason). reason is None for the plain default."""
+    tech = (host["tech"] or "").strip().lower()
+    server = (host["server"] or "").strip().lower()
+    profile = (host["profile"] or "").strip().lower()
+
+    if tech in TECH_GAMEPLAN:
+        return TECH_GAMEPLAN[tech], f"tech={tech}"
+    if server in SERVER_GAMEPLAN:
+        return SERVER_GAMEPLAN[server], f"server={server}"
+    if profile in PROFILE_GAMEPLAN:
+        return PROFILE_GAMEPLAN[profile], f"profile={profile}"
+    return DEFAULT_GAMEPLAN, None
+
+
 def bust_completed_runs(conn, project, host, gameplan):
     """If every stage of `gameplan` already has a completed run against
     `host`, return those run rows (oldest fingerprint order). Otherwise None."""
@@ -301,11 +337,14 @@ def print_stage_summary(row: dict) -> None:
         bullet("Extra args", fmt_list(row["extra_args"]))
 
 
-def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, args) -> None:
+def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, args, recommended_reason: str | None = None) -> None:
     section(f"Obliquity Bust: {mode}", "cyan")
     kv("Project", project["name"])
     kv("Target", host["url"])
-    kv("Selected gameplan", gameplan.name)
+    if recommended_reason:
+        kv("Selected gameplan", f"{gameplan.name}  (recommended: {recommended_reason})", color="green")
+    else:
+        kv("Selected gameplan", gameplan.name)
     if gameplan.description:
         kv("Description", gameplan.description)
     kv("Stages", len(gameplan.stages))
@@ -931,23 +970,33 @@ def cmd_fuzz_resume(args) -> None:
     cmd_fuzz_run(args)
 
 
+def resolve_bust_gameplan_choice(host, args) -> tuple:
+    if args.gameplan:
+        return resolve_gameplan(args.gameplan), None
+    name, reason = recommend_gameplan(host)
+    return resolve_gameplan(name), reason
+
+
 def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
     host = require_host(conn, project, args.url)
-    gameplan = resolve_gameplan(args.gameplan)
-    print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args)
+    gameplan, reason = resolve_bust_gameplan_choice(host, args)
+    print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args, recommended_reason=reason)
 
 
 def cmd_bust_run(args) -> None:
     conn = connect(DB_PATH)
     project = require_project(conn, args.project)
     host = require_host(conn, project, args.url)
-    gameplan = resolve_gameplan(args.gameplan)
+    gameplan, reason = resolve_bust_gameplan_choice(host, args)
+    original_name = gameplan.name
     gameplan = maybe_warn_and_escalate_bust(conn, project, host, gameplan, args)
+    if gameplan.name != original_name:
+        reason = None
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
-    print_gameplan_summary(project, host, gameplan, mode=mode, args=args)
+    print_gameplan_summary(project, host, gameplan, mode=mode, args=args, recommended_reason=reason)
 
     section("Execution", "cyan")
     results = run_gameplan(
@@ -1330,7 +1379,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     hr.set_defaults(func=cmd_host_remove)
 
     bust_scan_args = argparse.ArgumentParser(add_help=False)
-    bust_scan_args.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
+    bust_scan_args.add_argument("--gameplan", default=None, help="built-in name or JSON path (default: recommended from the host's --tech/--server/--profile, else generic-quick)")
     bust_scan_args.add_argument("--dry-run", action="store_true", help="print commands without running the underlying tool")
     bust_scan_args.add_argument("--rate-limit", type=int, help="maximum requests per second")
     bust_scan_args.add_argument("--threads", type=int, help="feroxbuster worker thread count")
@@ -1347,7 +1396,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         parents=[project_host_args],
         epilog="example:\n  obliquity bust plan acme https://app.acme.test --gameplan generic-quick",
     )
-    bp.add_argument("--gameplan", default="generic-quick", help="built-in name or JSON path (default: generic-quick)")
+    bp.add_argument("--gameplan", default=None, help="built-in name or JSON path (default: recommended from the host's --tech/--server/--profile, else generic-quick)")
     bp.set_defaults(func=cmd_bust_plan)
 
     br = bust_sub.add_parser(
