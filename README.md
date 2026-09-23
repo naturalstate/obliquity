@@ -103,10 +103,28 @@ wrapper that adds the project management layer they don't try to be:
 - unified reporting across all three tools: HTML, JSON, CSV, and Markdown
 - a small downloadable wordlist catalog, so you're not manually `git clone`-ing SecLists
 
-If you've ever manually re-run `common.txt`, then `big.txt`, then remembered
-to add `.bak`/`.old`/`.config` extensions, then lost track of which host got
-which pass -- that's the exact repetition Obliquity is built to manage.
-<!---Expand on this more, my pain points. Re running multiple feroxbuster commands in sequence with 4-6 wordlists for each host in scope and in multiple directories  --->
+### The pain it solves
+
+A real engagement rarely means *one* content-discovery scan. For a single
+host you end up running feroxbuster over and over: `common.txt`, then
+`big.txt`, then `raft-medium`, then `raft-large`, then the same lists again
+with `.bak`/`.old`/`.zip`/`.config` extensions, then again recursively into
+each interesting directory you just found (`/admin/`, `/backup/`, `/api/`).
+That's easily 4-6 wordlist passes per host -- and then you multiply the
+whole thing by every host in scope, and again by every promising
+subdirectory.
+
+Doing that by hand means babysitting a queue of near-identical commands,
+manually remembering which wordlist/extension/depth combination you've
+already thrown at which host and which path, and starting over from scratch
+whenever a scan gets interrupted or you close the laptop. It's slow, it's
+easy to lose your place in, and it's miserable to resume cleanly.
+
+Obliquity turns that into a single declarative gameplan per host. It runs
+the passes in order, fingerprints each one so it never repeats a
+combination it's already completed, resumes where you left off, and logs
+every finding from every host into one project database and one report --
+so the busywork disappears and you just read results.
 
 ## Features
 
