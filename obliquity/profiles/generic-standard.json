@@ -38,7 +38,7 @@
     },
     {
       "name": "dirbuster-medium",
-      "wordlist": "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/DirBuster-2007_directory-list-2.3-medium.txt",
       "extensions": [],
       "recursion": false,
       "status_codes": [

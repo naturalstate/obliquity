@@ -160,6 +160,7 @@ def require_job(conn, project: dict, target: str | None):
 # been fully run against a target. Extend as more built-ins are added.
 GAMEPLAN_ESCALATION = {
     "generic-quick": "generic-standard",
+    "generic-standard": "generic-deep",
 }
 CRACKPLAN_ESCALATION = {
     "quick-dictionary": "standard",

@@ -1,0 +1,23 @@
+{
+  "name": "generic-deep",
+  "description": "Deeper escalation pass after generic-standard: raft-medium, then raft-large with shallow recursion. Doesn't repeat generic-standard's common/big/dirbuster-medium passes. Slow -- run after quicker passes come up empty.",
+  "stages": [
+    {
+      "name": "raft-medium",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
+      "extensions": [],
+      "recursion": false,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403],
+      "estimated_minutes": 20
+    },
+    {
+      "name": "raft-large-recursive",
+      "wordlist": "/usr/share/seclists/Discovery/Web-Content/raft-large-directories.txt",
+      "extensions": [],
+      "recursion": true,
+      "depth": 1,
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403],
+      "estimated_minutes": 60
+    }
+  ]
+}

@@ -38,3 +38,18 @@ class HelpTests(TestCase):
 
         self.assertTrue(args.yes)
         self.assertTrue(args.if_exists)
+
+
+class EscalationLadderTests(TestCase):
+    def test_every_escalation_target_resolves_to_a_real_gameplan(self) -> None:
+        from obliquity.cli import GAMEPLAN_ESCALATION, resolve_gameplan
+
+        for source, target in GAMEPLAN_ESCALATION.items():
+            resolve_gameplan(source)
+            resolve_gameplan(target)
+
+    def test_generic_ladder_is_three_steps(self) -> None:
+        from obliquity.cli import GAMEPLAN_ESCALATION
+
+        self.assertEqual(GAMEPLAN_ESCALATION["generic-quick"], "generic-standard")
+        self.assertEqual(GAMEPLAN_ESCALATION["generic-standard"], "generic-deep")
