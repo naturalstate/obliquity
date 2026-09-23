@@ -113,10 +113,14 @@ Add a host:
 obliquity host add acme https://app.acme.com --profile aspnet --server iis --tech aspnet
 ```
 
-Preview the plan:
+Preview the plan. `--gameplan` is optional -- with `--tech`/`--server`/
+`--profile` on the host (as above), Obliquity recommends a matching
+built-in gameplan (`aspnet-standard` here) instead of always defaulting to
+`generic-quick`; the summary shows why (`recommended: tech=aspnet`), and an
+explicit `--gameplan` always overrides it:
 
 ```bash
-obliquity bust plan acme https://app.acme.com --gameplan aspnet-standard
+obliquity bust plan acme https://app.acme.com
 ```
 
 Dry-run the feroxbuster commands:
@@ -339,6 +343,29 @@ If a stage completed successfully before, Obliquity skips it unless `--force` is
 obliquity bust run acme https://app.acme.com --gameplan aspnet-standard --force
 obliquity crack run acme --gameplan standard --force
 ```
+
+`bust resume`/`crack resume` always skip completed stages silently -- that's
+their whole job. A plain `bust run`/`crack run` is different: if you run it
+interactively and the *entire* gameplan/crackplan has already completed
+against the target, Obliquity stops before doing anything, tells you when it
+last finished and what it found, and offers the next step up a small
+escalation ladder (`generic-quick` -> `generic-standard`,
+`quick-dictionary` -> `standard`) -- accept with `y`. Decline that (or
+there's no escalation defined yet) and it falls back to an explicit
+"rerun anyway?" confirmation. This only triggers for a real terminal
+session; scripts and `--force`/`--dry-run` runs are unaffected.
+
+## Scan history
+
+```bash
+obliquity history acme
+obliquity history acme --tool hashcat
+obliquity history acme --status failed --limit 20
+```
+
+A single readable log across bust/fuzz/crack -- timestamp, tool, status,
+target, gameplan/stage, finding count, and duration per run. (`obliquity
+runs` still exists as the lower-level bust/fuzz-only view.)
 
 ## Data location
 

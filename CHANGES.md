@@ -207,11 +207,38 @@ sensible alternative to run instead, acceptable with a plain `y`.
   mocked `input()`, so the behavior is verified even without the live
   walkthrough.
 
+### 7. Commit `f222845` -- Host/Application Awareness
+
+You said "continue adding features" with no specific target, so I picked up
+where we left off: the recommendation I gave when you asked what to build
+next, before the history/warn-and-escalate detour.
+
+`host add --server iis --tech aspnet` has stored this metadata since before
+this session started, but nothing ever read it back -- `bust plan`/`bust
+run` always defaulted to `generic-quick` regardless. `--gameplan` now
+defaults to a recommendation instead of a hardcoded string, checked
+tech -> server -> profile -> `generic-quick`, via a small lookup table over
+the gameplans that already exist (`recommend_gameplan()` in `cli.py`). The
+summary always shows *why* a recommendation was used
+(`Selected gameplan: aspnet-standard  (recommended: tech=aspnet)`) so it's
+never a silent/surprising choice, and an explicit `--gameplan` always wins
+outright with no label. When the warn-and-escalate flow from the previous
+commit swaps in a different gameplan, the recommendation label is cleared
+rather than left stale on a plan it no longer describes.
+
+Verified live: created a fresh project, added a host with
+`--tech aspnet --server iis`, ran `bust plan` with no `--gameplan` --
+correctly picked `aspnet-standard` with the reason shown. Confirmed a plain
+host with no metadata still falls back to `generic-quick`, and that an
+explicit `--gameplan` overrides cleanly. 7 new tests for the recommendation
+function's branches.
+
 ### Test coverage added this session
 
-19 -> 50 passing tests. New files: `tests/test_hashcat.py`,
+19 -> 57 passing tests. New files: `tests/test_hashcat.py`,
 `tests/test_crackplan.py`, `tests/test_wordlists.py`, `tests/test_history.py`,
-`tests/test_escalation.py`. All network calls in tests are mocked -- nothing
+`tests/test_escalation.py`, `tests/test_recommend.py`. All network calls in
+tests are mocked -- nothing
 in the test suite hits the real internet.
 
 ### Explicitly parked, not forgotten
@@ -240,7 +267,6 @@ integration, cross-tool data sharing).
 
 | Feature (from planning doc) | Status | Notes |
 |---|---|---|
-| Host/Application Awareness -- auto-recommend a plan from host metadata (`bust plan app1` suggesting a gameplan from `--server`/`--tech`) | Not built | `host add` already stores `--server`/`--tech`/`--profile`/`--notes`; nothing reads them to *choose* a gameplan yet. `bust plan` only previews a gameplan you already named. This is a mapping table + a recommender function -- the data it needs is already being collected and just sitting unused. **This is what we agreed to build next.** |
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
 | Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Partially built | Gameplans already run stages in order and skip completed ones (this *is* the scheduling engine). A first, narrow escalation step now exists (`generic-quick` -> `generic-standard`, `quick-dictionary` -> `standard`, offered when a plan's already fully done -- see the history/warn-and-escalate feature). Still missing: the doc's full common -> big -> raft-medium -> raft-large -> CMS-specific chain as actual built-in gameplan stages. `big.txt` and the raft lists are already in the wordlist catalog; low effort now that the downloader exists. |
 | Structured export formats -- JSON, CSV, Markdown alongside the existing HTML report | Not built | `get_findings`/`get_cracked_hashes`/`get_runs` already return the structured rows every one of these formats would need; this is serialization, not new data collection. Cheapest item on the whole list. Raw tool output and SQLite storage (also on the doc's format list) already exist today. |
@@ -319,6 +345,12 @@ smaller version of the same principle.
 - Stopping instead of silently re-doing already-completed work: rerunning an
   already-fully-completed gameplan/crackplan now warns and asks rather than
   either silently skipping or silently rerunning -- see the same commit.
+- Host/Application Awareness: `bust plan`/`bust run`/`bust resume` now
+  recommend a built-in gameplan from a host's `--tech`/`--server`/`--profile`
+  metadata (checked in that priority order) instead of always defaulting to
+  `generic-quick`, and show why. An explicit `--gameplan` always overrides.
+  Intentionally a small lookup table over today's built-ins, not the doc's
+  full profile-composition system -- see the Tier 3 row below for that.
 
 ---
 
