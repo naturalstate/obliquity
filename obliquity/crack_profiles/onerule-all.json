@@ -1,0 +1,17 @@
+{
+  "name": "onerule-all",
+  "description": "rockyou plain, then rockyou with OneRuleToRuleThemAll -- a large, high-coverage community rule (stealthsploit/Optimised-hashcat-Rule). Install the rule with: obliquity wordlists install onerule-all",
+  "stages": [
+    {
+      "name": "rockyou-plain",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
+    },
+    {
+      "name": "rockyou-onerule-all",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "rules": "/usr/share/hashcat/rules/OneRuleToRuleThemAll.rule"
+    }
+  ]
+}

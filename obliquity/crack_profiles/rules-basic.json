@@ -1,0 +1,26 @@
+{
+  "name": "rules-basic",
+  "description": "Escalating rules pass over rockyou: plain, then best64 rules, then best64 stacked on itself (best64 x best64) for far broader mutations. A solid default rules progression before reaching for the heavier OneRule sets.",
+  "stages": [
+    {
+      "name": "rockyou-plain",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
+    },
+    {
+      "name": "rockyou-best64",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "rules": "/usr/share/hashcat/rules/best64.rule"
+    },
+    {
+      "name": "rockyou-best64-stacked",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "rules": [
+        "/usr/share/hashcat/rules/best64.rule",
+        "/usr/share/hashcat/rules/best64.rule"
+      ]
+    }
+  ]
+}

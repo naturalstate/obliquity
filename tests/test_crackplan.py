@@ -49,6 +49,17 @@ class CrackStageValidationTests(TestCase):
         with self.assertRaises(ValueError):
             CrackStage(name="bad", attack_mode="hybrid-wordlist-mask", wordlist="w.txt", mask="?d?d", rules="best66.rule")
 
+    def test_string_rule_normalized_to_list(self) -> None:
+        stage = CrackStage(name="ok", attack_mode="dictionary", wordlist="w.txt", rules="best64.rule")
+        self.assertEqual(stage.rules, ["best64.rule"])
+
+    def test_stacked_rules_list_preserved(self) -> None:
+        stage = CrackStage(
+            name="ok", attack_mode="dictionary", wordlist="w.txt",
+            rules=["best64.rule", "best64.rule"],
+        )
+        self.assertEqual(stage.rules, ["best64.rule", "best64.rule"])
+
 
 class FingerprintTests(TestCase):
     def test_fingerprint_changes_with_hash_type(self) -> None:

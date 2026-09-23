@@ -5,21 +5,18 @@
     {
       "name": "rockyou-plain",
       "attack_mode": "dictionary",
-      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "estimated_minutes": 10
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
     },
     {
       "name": "rockyou-best66",
       "attack_mode": "dictionary",
       "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "rules": "/usr/share/hashcat/rules/best66.rule",
-      "estimated_minutes": 30
+      "rules": "/usr/share/hashcat/rules/best66.rule"
     },
     {
       "name": "policy-mask",
       "attack_mode": "mask",
-      "mask": "?u?l?l?l?l?l?d?d",
-      "estimated_minutes": 45
+      "mask": "?u?l?l?l?l?l?d?d"
     }
   ]
 }

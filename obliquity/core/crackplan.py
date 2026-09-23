@@ -25,12 +25,16 @@ class CrackStage:
     attack_mode: str  # see CRACK_MODE_REQUIREMENTS
     wordlist: str | None = None
     wordlist2: str | None = None  # second wordlist for combinator attacks
-    rules: str | None = None
+    # one rule file, or a list of them to stack (each becomes its own -r);
+    # normalized to a list in __post_init__.
+    rules: str | list[str] | None = None
     mask: str | None = None
     extra_args: list[str] = field(default_factory=list)
-    estimated_minutes: int | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.rules, str):
+            self.rules = [self.rules]
+
         if self.attack_mode not in CRACK_MODE_REQUIREMENTS:
             raise ValueError(
                 f"crack stage '{self.name}' has unknown attack_mode '{self.attack_mode}' "
@@ -72,10 +76,13 @@ def load_crackplan(path: Path) -> CrackPlan:
                 stage.wordlist2 = str((path.parent / wordlist2).resolve())
             stage.wordlist2 = resolve_path(stage.wordlist2)
         if stage.rules:
-            rules = Path(stage.rules)
-            if not rules.is_absolute():
-                stage.rules = str((path.parent / rules).resolve())
-            stage.rules = resolve_path(stage.rules)
+            resolved_rules = []
+            for rule in stage.rules:
+                rule_path = Path(rule)
+                if not rule_path.is_absolute():
+                    rule = str((path.parent / rule_path).resolve())
+                resolved_rules.append(resolve_path(rule))
+            stage.rules = resolved_rules
     if not stages:
         raise ValueError(f"Crack plan has no stages: {path}")
     return CrackPlan(

@@ -16,8 +16,7 @@
         308,
         401,
         403
-      ],
-      "estimated_minutes": 2
+      ]
     },
     {
       "name": "common-light-files",
@@ -39,8 +38,7 @@
         308,
         401,
         403
-      ],
-      "estimated_minutes": 8
+      ]
     },
     {
       "name": "shallow-recursion",
@@ -57,8 +55,7 @@
         308,
         401,
         403
-      ],
-      "estimated_minutes": 6
+      ]
     }
   ]
 }

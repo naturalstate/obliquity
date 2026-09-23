@@ -311,29 +311,12 @@ def fmt_recursion(enabled: bool, depth: int | None) -> str:
     return f"yes, depth={depth}" if depth is not None else "yes"
 
 
-def fmt_estimate(minutes: int | None) -> str:
-    if minutes is None:
-        return "unknown"
-    if minutes < 60:
-        return f"{minutes} min"
-    hours = minutes / 60
-    return f"{hours:.1f} hr"
-
-
-def total_estimate(gameplan) -> str:
-    estimates = [stage.estimated_minutes for stage in gameplan.stages]
-    if not estimates or any(value is None for value in estimates):
-        return "unknown in MVP; stage estimates can be added to the gameplan JSON later"
-    return fmt_estimate(sum(value or 0 for value in estimates))
-
-
 def print_stage_summary(row: dict) -> None:
     subsection(f"Stage {row['number']}: {row['name']}", "magenta")
     bullet("Wordlist", row["wordlist"])
     bullet("Extensions", fmt_list(row["extensions"]))
     bullet("Recursion", fmt_recursion(row["recursion"], row["depth"]))
     bullet("Status codes", fmt_list(row["status_codes"]))
-    bullet("Estimated time", fmt_estimate(row.get("estimated_minutes")))
     if row.get("extra_args"):
         bullet("Extra args", fmt_list(row["extra_args"]))
 
@@ -349,7 +332,6 @@ def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, ar
     if gameplan.description:
         kv("Description", gameplan.description)
     kv("Stages", len(gameplan.stages))
-    kv("Estimated completion", total_estimate(gameplan))
     kv("Output root", Path(project["root_dir"]) / "runs")
 
     option_bits = []
@@ -428,10 +410,9 @@ def print_crack_stage_summary(row: dict) -> None:
     if row.get("wordlist2"):
         bullet("Wordlist 2", row["wordlist2"])
     if row.get("rules"):
-        bullet("Rules", row["rules"])
+        bullet("Rules", fmt_list(row["rules"]))
     if row.get("mask"):
         bullet("Mask", row["mask"])
-    bullet("Estimated time", fmt_estimate(row.get("estimated_minutes")))
 
 
 def print_crackplan_summary(project: dict, job: dict, crackplan, *, mode: str, args) -> None:
@@ -444,8 +425,6 @@ def print_crackplan_summary(project: dict, job: dict, crackplan, *, mode: str, a
     if crackplan.description:
         kv("Description", crackplan.description)
     kv("Stages", len(crackplan.stages))
-    estimates = [stage.estimated_minutes for stage in crackplan.stages]
-    kv("Estimated completion", "unknown in MVP" if any(v is None for v in estimates) else fmt_estimate(sum(estimates)))
     kv("Output root", Path(project["root_dir"]) / "runs" / "crack")
 
     option_bits = []
@@ -474,7 +453,7 @@ def print_crack_event(event: dict) -> None:
         if event.get("wordlist2"):
             bullet("Wordlist 2", event["wordlist2"])
         if event.get("rules"):
-            bullet("Rules", event["rules"])
+            bullet("Rules", fmt_list(event["rules"]))
         if event.get("mask"):
             bullet("Mask", event["mask"])
 
@@ -698,7 +677,6 @@ def cmd_gameplans_list(args) -> None:
         if gameplan.description:
             bullet("Description", gameplan.description)
         bullet("Stages", len(gameplan.stages))
-        bullet("Estimated completion", total_estimate(gameplan))
         if not args.brief:
             for row in preview_plan("https://example.local", gameplan):
                 print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
@@ -735,7 +713,7 @@ def cmd_gameplans_list(args) -> None:
                 if row.get("wordlist2"):
                     print(f"     {c('Wordlist 2:', 'cyan', bold=True)} {row['wordlist2']}")
                 if row.get("rules"):
-                    print(f"     {c('Rules:', 'cyan', bold=True)} {row['rules']}")
+                    print(f"     {c('Rules:', 'cyan', bold=True)} {fmt_list(row['rules'])}")
                 if row.get("mask"):
                     print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
             blank()
@@ -770,8 +748,10 @@ def default_profile_missing_entries() -> list:
         for stage in load_crackplan(path).stages:
             if stage.wordlist:
                 referenced_paths.add(stage.wordlist)
-            if stage.rules:
-                referenced_paths.add(stage.rules)
+            if stage.wordlist2:
+                referenced_paths.add(stage.wordlist2)
+            for rule in stage.rules or []:
+                referenced_paths.add(rule)
 
     missing = []
     for entry in WORDLIST_CATALOG:
@@ -1370,7 +1350,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     gl = gameplans_sub.add_parser(
         "list",
         help="list available gameplans",
-        description="List built-in gameplans, their stages, wordlists, extensions, and estimates.",
+        description="List built-in gameplans, their stages, wordlists, and extensions.",
         epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list --brief",
         formatter_class=formatter,
     )

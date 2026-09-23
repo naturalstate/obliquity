@@ -62,7 +62,6 @@ def preview_plan(plan: CrackPlan) -> list[dict]:
                 "wordlist2": stage.wordlist2,
                 "rules": stage.rules,
                 "mask": stage.mask,
-                "estimated_minutes": stage.estimated_minutes,
             }
         )
     return rows
@@ -147,7 +146,6 @@ def run_crackplan(
             "wordlist2": stage.wordlist2,
             "rules": stage.rules,
             "mask": stage.mask,
-            "estimated_minutes": stage.estimated_minutes,
             "resuming": resuming,
             "command": command,
             "result_output": str(result_output),

@@ -5,8 +5,7 @@
     {
       "name": "bundled-dictionary",
       "attack_mode": "dictionary",
-      "wordlist": "smoke-test-wordlist.txt",
-      "estimated_minutes": 1
+      "wordlist": "smoke-test-wordlist.txt"
     }
   ]
 }

@@ -72,7 +72,6 @@ def preview_plan(url: str, gameplan: Gameplan) -> list[dict]:
                 "depth": stage.depth,
                 "status_codes": stage.status_codes,
                 "extra_args": stage.extra_args,
-                "estimated_minutes": stage.estimated_minutes,
             }
         )
     return rows
@@ -150,7 +149,6 @@ def run_gameplan(
             "recursion": stage.recursion,
             "depth": stage.depth,
             "status_codes": stage.status_codes,
-            "estimated_minutes": stage.estimated_minutes,
             "command": command,
             "json_output": str(json_output),
             "raw_output": str(raw_output),

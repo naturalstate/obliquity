@@ -17,8 +17,7 @@
         401,
         403,
         405
-      ],
-      "estimated_minutes": 5
+      ]
     },
     {
       "name": "api-files",
@@ -43,8 +42,7 @@
         401,
         403,
         405
-      ],
-      "estimated_minutes": 10
+      ]
     }
   ]
 }

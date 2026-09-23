@@ -77,10 +77,31 @@ WORDLIST_CATALOG: list[WordlistEntry] = [
     ),
     WordlistEntry(
         name="hashcat-best66-rules",
-        description="hashcat's best66.rule (formerly best64.rule, renamed upstream)",
+        description="hashcat's best66.rule (current upstream successor to best64.rule)",
         category="crack-rules",
         url="https://raw.githubusercontent.com/hashcat/hashcat/master/rules/best66.rule",
         match_suffix="hashcat/rules/best66.rule",
+    ),
+    WordlistEntry(
+        name="hashcat-best64-rules",
+        description="hashcat's classic best64.rule (from the v6.2.6 release; the widely-referenced ruleset)",
+        category="crack-rules",
+        url="https://raw.githubusercontent.com/hashcat/hashcat/v6.2.6/rules/best64.rule",
+        match_suffix="hashcat/rules/best64.rule",
+    ),
+    WordlistEntry(
+        name="onerule-all",
+        description="OneRuleToRuleThemAll.rule -- popular high-coverage rule (stealthsploit)",
+        category="crack-rules",
+        url="https://raw.githubusercontent.com/stealthsploit/Optimised-hashcat-Rule/master/OneRuleToRuleThemAll.rule",
+        match_suffix="hashcat/rules/OneRuleToRuleThemAll.rule",
+    ),
+    WordlistEntry(
+        name="onerule-still",
+        description="OneRuleToRuleThemStill.rule -- optimised successor to OneRuleToRuleThemAll (stealthsploit)",
+        category="crack-rules",
+        url="https://raw.githubusercontent.com/stealthsploit/OneRuleToRuleThemStill/main/OneRuleToRuleThemStill.rule",
+        match_suffix="hashcat/rules/OneRuleToRuleThemStill.rule",
     ),
 ]
 

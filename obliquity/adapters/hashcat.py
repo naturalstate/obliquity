@@ -68,8 +68,8 @@ def build_command(
     if restore_file is not None:
         cmd += ["--restore-file-path", str(restore_file)]
 
-    if stage.rules:
-        cmd += ["-r", stage.rules]
+    for rule in stage.rules or []:
+        cmd += ["-r", rule]
 
     cmd += stage.extra_args
     cmd += extra_args or []

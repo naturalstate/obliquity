@@ -7,8 +7,7 @@
       "wordlist": "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
       "extensions": [],
       "recursion": false,
-      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403],
-      "estimated_minutes": 20
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
     },
     {
       "name": "raft-large-recursive",
@@ -16,8 +15,7 @@
       "extensions": [],
       "recursion": true,
       "depth": 1,
-      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403],
-      "estimated_minutes": 60
+      "status_codes": [200, 204, 301, 302, 307, 308, 401, 403]
     }
   ]
 }

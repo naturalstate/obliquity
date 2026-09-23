@@ -6,8 +6,7 @@
       "name": "bundled-word-plus-2-digits",
       "attack_mode": "hybrid-wordlist-mask",
       "wordlist": "smoke-test-wordlist.txt",
-      "mask": "?d?d",
-      "estimated_minutes": 1
+      "mask": "?d?d"
     }
   ]
 }

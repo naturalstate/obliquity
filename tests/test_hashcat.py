@@ -29,6 +29,18 @@ class BuildCommandTests(TestCase):
 
         self.assertEqual(command[command.index("-r") + 1], "best64.rule")
 
+    def test_stacked_rules_produce_multiple_dash_r_flags(self) -> None:
+        stage = CrackStage(
+            name="dict", attack_mode="dictionary", wordlist="words.txt",
+            rules=["best64.rule", "best64.rule"],
+        )
+        command = build_command("hashes.txt", 0, stage, Path("out.txt"))
+
+        self.assertEqual(command.count("-r"), 2)
+        # both -r flags reference the rule file
+        r_positions = [i for i, tok in enumerate(command) if tok == "-r"]
+        self.assertEqual([command[i + 1] for i in r_positions], ["best64.rule", "best64.rule"])
+
     def test_outfile_format_is_hash_colon_plain(self) -> None:
         # 1,2 (comma-separated, NOT a bitmask sum) -- confirmed against real
         # hashcat 7.1.2: "3" alone produces hex_plain, not hash:plain.

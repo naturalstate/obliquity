@@ -5,29 +5,25 @@
     {
       "name": "rockyou-plain",
       "attack_mode": "dictionary",
-      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "estimated_minutes": 10
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
     },
     {
       "name": "word-plus-4-digits",
       "attack_mode": "hybrid-wordlist-mask",
       "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "mask": "?d?d?d?d",
-      "estimated_minutes": 40
+      "mask": "?d?d?d?d"
     },
     {
       "name": "word-plus-special-and-2-digits",
       "attack_mode": "hybrid-wordlist-mask",
       "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "mask": "?s?d?d",
-      "estimated_minutes": 40
+      "mask": "?s?d?d"
     },
     {
       "name": "digits-then-word",
       "attack_mode": "hybrid-mask-wordlist",
       "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "mask": "?d?d",
-      "estimated_minutes": 30
+      "mask": "?d?d"
     }
   ]
 }

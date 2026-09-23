@@ -5,8 +5,7 @@
     {
       "name": "rockyou",
       "attack_mode": "dictionary",
-      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
-      "estimated_minutes": 10
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
     }
   ]
 }

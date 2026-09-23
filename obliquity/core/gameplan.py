@@ -19,7 +19,6 @@ class Stage:
     status_codes: list[int] = field(default_factory=lambda: [200, 204, 301, 302, 307, 308, 401, 403])
     collect_extensions: bool = False
     extra_args: list[str] = field(default_factory=list)
-    estimated_minutes: int | None = None
 
 
 @dataclass

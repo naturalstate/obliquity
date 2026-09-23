@@ -1,0 +1,17 @@
+{
+  "name": "onerule-still",
+  "description": "rockyou plain, then rockyou with OneRuleToRuleThemStill -- the optimised successor to OneRuleToRuleThemAll (stealthsploit/OneRuleToRuleThemStill). Install the rule with: obliquity wordlists install onerule-still",
+  "stages": [
+    {
+      "name": "rockyou-plain",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
+    },
+    {
+      "name": "rockyou-onerule-still",
+      "attack_mode": "dictionary",
+      "wordlist": "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt",
+      "rules": "/usr/share/hashcat/rules/OneRuleToRuleThemStill.rule"
+    }
+  ]
+}
