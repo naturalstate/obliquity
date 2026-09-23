@@ -301,6 +301,7 @@ Bust (feroxbuster):
 
 - `generic-quick`
 - `generic-standard`
+- `generic-deep` (raft-medium + recursive raft-large; slow, run after `generic-standard` comes up empty)
 - `aspnet-standard`
 - `php-standard`
 - `api-quick`
@@ -349,7 +350,7 @@ their whole job. A plain `bust run`/`crack run` is different: if you run it
 interactively and the *entire* gameplan/crackplan has already completed
 against the target, Obliquity stops before doing anything, tells you when it
 last finished and what it found, and offers the next step up a small
-escalation ladder (`generic-quick` -> `generic-standard`,
+escalation ladder (`generic-quick` -> `generic-standard` -> `generic-deep`,
 `quick-dictionary` -> `standard`) -- accept with `y`. Decline that (or
 there's no escalation defined yet) and it falls back to an explicit
 "rerun anyway?" confirmation. This only triggers for a real terminal

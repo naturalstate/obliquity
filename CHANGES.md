@@ -233,9 +233,44 @@ host with no metadata still falls back to `generic-quick`, and that an
 explicit `--gameplan` overrides cleanly. 7 new tests for the recommendation
 function's branches.
 
+### 8. Commit `5874ddd` -- `generic-deep` gameplan, escalation ladder extended, another stale-path bug
+
+You said "continue adding features" again with no specific target. Picked
+the next Tier 1 item: actually building out the wordlist escalation chain
+the original doc describes (common -> big -> raft-medium -> raft-large),
+now that the downloader has those files available.
+
+- New built-in gameplan `generic-deep`: raft-medium, then raft-large with
+  shallow recursion. `GAMEPLAN_ESCALATION` extended:
+  `generic-standard` -> `generic-deep`, so the warn-and-escalate flow from
+  two commits ago now offers a real third rung.
+- **Almost shipped a real bug, caught by checking before writing, not
+  after**: `generic-standard.json` already has a `big-directories` stage
+  using `big.txt`. My first draft of `generic-deep` also used `big.txt` as
+  its first stage -- which would NOT have been skipped as a duplicate,
+  because fingerprints are scoped by gameplan *name*, so the same wordlist
+  under a different gameplan name is a different fingerprint and reruns
+  from scratch. Redesigned `generic-deep` to start at raft-medium instead,
+  and added a test asserting the two gameplans' wordlists never overlap.
+- **Bug actually caught while checking generic-standard.json's other
+  stages, not guessed**: its `dirbuster-medium` stage referenced
+  `directory-list-2.3-medium.txt`, which no longer exists in current
+  SecLists -- it was renamed `DirBuster-2007_directory-list-2.3-
+  medium.txt` (this is the same repo I'd already confirmed the real
+  filename for while building the wordlist catalog, so I recognized it was
+  wrong on sight rather than needing to re-check GitHub). Fixed; `wordlists
+  status` now correctly flags it as needed where it silently never matched
+  the catalog before.
+- New test: every built-in gameplan loads without error, across the whole
+  `profiles/` directory, not just `smoke-test.json` as before.
+
+Verified live: `gameplans list --brief` shows the new profile,
+`wordlists status` now flags raft-medium/raft-large/dirbuster-medium as
+needed, `bust plan --gameplan generic-deep` previews correctly.
+
 ### Test coverage added this session
 
-19 -> 57 passing tests. New files: `tests/test_hashcat.py`,
+19 -> 61 passing tests. New files: `tests/test_hashcat.py`,
 `tests/test_crackplan.py`, `tests/test_wordlists.py`, `tests/test_history.py`,
 `tests/test_escalation.py`, `tests/test_recommend.py`. All network calls in
 tests are mocked -- nothing
@@ -268,7 +303,7 @@ integration, cross-tool data sharing).
 | Feature (from planning doc) | Status | Notes |
 |---|---|---|
 | Extension Intelligence -- don't double-append extensions to a wordlist that already has them; intensity-tiered extension sets (low/medium/high) reusable across profiles | Not built | Gameplan JSON stages specify a flat `extensions` list by hand today, no logic distinguishing directory-only wordlists from ones with baked-in extensions. Real correctness gap the doc calls out specifically. |
-| Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Partially built | Gameplans already run stages in order and skip completed ones (this *is* the scheduling engine). A first, narrow escalation step now exists (`generic-quick` -> `generic-standard`, `quick-dictionary` -> `standard`, offered when a plan's already fully done -- see the history/warn-and-escalate feature). Still missing: the doc's full common -> big -> raft-medium -> raft-large -> CMS-specific chain as actual built-in gameplan stages. `big.txt` and the raft lists are already in the wordlist catalog; low effort now that the downloader exists. |
+| Wordlist Scheduling escalation -- common -> big -> raft-medium -> raft-large -> CMS/tech-specific, as the doc's example sequence | Mostly built for the generic case | The doc's full chain now exists as real built-in gameplans: `generic-quick` (common) -> `generic-standard` (+big, +dirbuster-medium, +backup/config) -> `generic-deep` (+raft-medium, +raft-large recursive), each offered automatically via the warn-and-escalate flow when the previous one's fully done. Still missing: the CMS/tech-specific tail end of the doc's sequence (e.g. an aspnet/php-specific deep tier) -- only the generic and crack (`quick-dictionary` -> `standard`) ladders exist so far. |
 | Structured export formats -- JSON, CSV, Markdown alongside the existing HTML report | Not built | `get_findings`/`get_cracked_hashes`/`get_runs` already return the structured rows every one of these formats would need; this is serialization, not new data collection. Cheapest item on the whole list. Raw tool output and SQLite storage (also on the doc's format list) already exist today. |
 | Crack hybrid/combinator attack modes (`?u?l?l?l?l?d?d?d` appended to a wordlist, or combinator of two wordlists) | Not built | `CrackStage.attack_mode` currently only supports `dictionary` (`-a 0`) and `mask` (`-a 3`); hashcat's hybrid (`-a 6`/`-a 7`) and combinator (`-a 1`) modes aren't wired up. Same shape as the existing two modes -- small addition to `hashcat.py`'s `ATTACK_MODES` map and `CrackStage` validation, not a new subsystem. |
 
