@@ -515,6 +515,32 @@ github.com/ffuf/ffuf/v2@latest`; hashcat is in apt/dnf/pacman but on
 Windows is a portable download from hashcat.net. Added a "no package
 manager" fallback pointing at all three release pages.
 
+### 17. Rule-based crack gameplans, stacked rules, and estimate removal
+
+You asked for more crack gameplans (there were some, but no rule-based
+ones) and pointed out the "estimated time" in the gameplan list is
+pointless -- it can't know the target, wordlist size, or network.
+
+- New crack gameplans: `rules-basic` (rockyou -> +best64 -> +best64
+  stacked on itself), `onerule-all` (rockyou + OneRuleToRuleThemAll),
+  `onerule-still` (rockyou + OneRuleToRuleThemStill).
+- `CrackStage.rules` now takes a list of rule files (each becomes its own
+  `-r`, so stacking works), normalized from a plain string for backward
+  compat. Added best64, OneRuleToRuleThemAll, and OneRuleToRuleThemStill
+  to the downloadable wordlist catalog. All three URLs verified against
+  upstream (best64 pinned to hashcat's v6.2.6 tag, since upstream renamed
+  it to best66 on master; the two OneRule files from stealthsploit's
+  repos) and confirmed downloading through the catalog code.
+- Removed `estimated_minutes` entirely -- agreed it was misleading.
+  Dropped the field from `Stage`/`CrackStage`, stripped it from all 12
+  built-in profile JSONs, and deleted the `total_estimate`/`fmt_estimate`
+  helpers and every "Estimated ..." display line.
+- Also added the missing `fuzz ... --dry-run` example to the README's
+  usage section (you noticed fuzz lacked the dry-run line the other
+  sections have).
+
+79 tests passing.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

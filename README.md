@@ -364,6 +364,9 @@ raw captured request.
 # List every fuzz gameplan
 obliquity gameplans list
 
+# Dry-run first to see the exact ffuf command without sending anything
+obliquity fuzz run acme https://app.acme.com --gameplan parameter-names-quick --endpoint /search --dry-run
+
 # Discover accepted GET parameter names
 obliquity fuzz run acme https://app.acme.com --gameplan parameter-names-quick --endpoint /search
 
@@ -518,9 +521,16 @@ obliquity bust run acme https://app.acme.com \
 
 - `quick-dictionary` *(single rockyou pass)*
 - `standard` *(rockyou, +best66 rules, +policy mask)*
+- `rules-basic` *(rockyou -> +best64 -> +best64 stacked)*
+- `onerule-all` *(rockyou -> +OneRuleToRuleThemAll)*
+- `onerule-still` *(rockyou -> +OneRuleToRuleThemStill)*
 - `hybrid-standard` *(rockyou + digit/special masks -- "Summer2024" shapes)*
 - `smoke-test` *(bundled wordlist, no SecLists needed)*
 - `smoke-test-hybrid` *(bundled wordlist + mask, no SecLists needed)*
+
+The `onerule-*` plans need their rule files -- grab them (and the classic
+best64) with `obliquity wordlists install onerule-all onerule-still
+hashcat-best64-rules`, or `obliquity wordlists install --all-missing`.
 
 </td>
 </tr>
