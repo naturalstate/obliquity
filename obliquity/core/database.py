@@ -511,3 +511,58 @@ def get_crack_runs(conn: sqlite3.Connection, project_id: int, status: str | None
     if status:
         return list(conn.execute("SELECT * FROM crack_runs WHERE project_id = ? AND status = ? ORDER BY id", (project_id, status)))
     return list(conn.execute("SELECT * FROM crack_runs WHERE project_id = ? ORDER BY id", (project_id,)))
+
+
+def sum_findings_for_runs(conn: sqlite3.Connection, run_ids: list[int]) -> int:
+    if not run_ids:
+        return 0
+    placeholders = ",".join("?" for _ in run_ids)
+    return conn.execute(f"SELECT COUNT(*) FROM findings WHERE run_id IN ({placeholders})", run_ids).fetchone()[0]
+
+
+def sum_cracked_for_runs(conn: sqlite3.Connection, run_ids: list[int]) -> int:
+    if not run_ids:
+        return 0
+    placeholders = ",".join("?" for _ in run_ids)
+    return conn.execute(f"SELECT COUNT(*) FROM cracked_hashes WHERE run_id IN ({placeholders})", run_ids).fetchone()[0]
+
+
+def get_history(
+    conn: sqlite3.Connection,
+    project_id: int,
+    *,
+    tool: str | None = None,
+    status: str | None = None,
+    limit: int | None = None,
+) -> list[sqlite3.Row]:
+    # Note: r.id/cr.id are explicitly aliased to run_id. With the JOINs present,
+    # SQLite's compound-SELECT ORDER BY resolution collides an unqualified
+    # "id" output column with hosts.id/crack_jobs.id from the FROM clause
+    # (even though they aren't selected) and refuses to order by it.
+    sql = """
+        SELECT r.id AS run_id, r.tool, r.gameplan_name, r.stage_name, r.status, r.exit_code,
+               r.started_at, r.finished_at, h.url AS target,
+               (SELECT COUNT(*) FROM findings f WHERE f.run_id = r.id) AS finding_count
+        FROM runs r
+        JOIN hosts h ON h.id = r.host_id
+        WHERE r.project_id = ?
+        UNION ALL
+        SELECT cr.id AS run_id, 'hashcat' AS tool, cr.crackplan_name AS gameplan_name, cr.stage_name, cr.status, cr.exit_code,
+               cr.started_at, cr.finished_at, COALESCE(j.name, j.hash_file) AS target,
+               (SELECT COUNT(*) FROM cracked_hashes ch WHERE ch.run_id = cr.id) AS finding_count
+        FROM crack_runs cr
+        JOIN crack_jobs j ON j.id = cr.job_id
+        WHERE cr.project_id = ?
+    """
+    params: list[object] = [project_id, project_id]
+    if tool:
+        sql = f"SELECT * FROM ({sql}) WHERE tool = ?"
+        params.append(tool)
+    if status:
+        sql = f"SELECT * FROM ({sql}) WHERE status = ?"
+        params.append(status)
+    sql += " ORDER BY started_at DESC, run_id DESC"
+    if limit:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return list(conn.execute(sql, params))

@@ -14,6 +14,7 @@ from obliquity.core.console import (
     bullet,
     c,
     command_block,
+    elapsed_time,
     kv,
     live_progress_line,
     progress_bar,
@@ -23,7 +24,12 @@ from obliquity.core.console import (
     supports_color,
 )
 from obliquity.core.crack_runner import preview_plan as preview_crackplan, run_crackplan
-from obliquity.core.crackplan import find_builtin_crackplan, list_builtin_crackplans, load_crackplan
+from obliquity.core.crackplan import (
+    find_builtin_crackplan,
+    fingerprint_crack_stage,
+    list_builtin_crackplans,
+    load_crackplan,
+)
 from obliquity.core.database import (
     add_crack_job,
     add_host,
@@ -34,17 +40,22 @@ from obliquity.core.database import (
     delete_project,
     get_coverage,
     get_crack_job,
+    get_crack_run_by_fingerprint,
     get_crack_runs,
     get_cracked_hashes,
     get_findings,
+    get_history,
     get_host,
     get_project,
+    get_run_by_fingerprint,
     get_runs,
     list_crack_jobs,
     list_hosts,
+    sum_cracked_for_runs,
+    sum_findings_for_runs,
     update_host,
 )
-from obliquity.core.gameplan import find_builtin_gameplan, list_builtin_gameplans, load_gameplan
+from obliquity.core.gameplan import find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
 from obliquity.core.reporting import generate_html
@@ -141,6 +152,114 @@ def require_job(conn, project: dict, target: str | None):
         options = ", ".join(j["name"] or j["hash_file"] for j in jobs)
         die(f"project '{project['name']}' has multiple crack jobs; specify one: {options}")
     return jobs[0]
+
+
+# A small, explicit escalation ladder between built-in gameplans/crackplans --
+# not a general intensity/composition system (see CHANGES.md roadmap for
+# that); just enough to suggest something reasonable when a plan has already
+# been fully run against a target. Extend as more built-ins are added.
+GAMEPLAN_ESCALATION = {
+    "generic-quick": "generic-standard",
+}
+CRACKPLAN_ESCALATION = {
+    "quick-dictionary": "standard",
+}
+
+
+def bust_completed_runs(conn, project, host, gameplan):
+    """If every stage of `gameplan` already has a completed run against
+    `host`, return those run rows (oldest fingerprint order). Otherwise None."""
+    runs = []
+    for stage in gameplan.stages:
+        fingerprint = fingerprint_stage(host["url"], gameplan, stage, project_id=project["id"])
+        run = get_run_by_fingerprint(conn, fingerprint)
+        if run is None or run["status"] != "completed":
+            return None
+        runs.append(run)
+    return runs
+
+
+def crack_completed_runs(conn, project, job, crackplan):
+    runs = []
+    for stage in crackplan.stages:
+        fingerprint = fingerprint_crack_stage(job["hash_file"], job["hash_type"], crackplan, stage, project_id=project["id"])
+        run = get_crack_run_by_fingerprint(conn, fingerprint)
+        if run is None or run["status"] != "completed":
+            return None
+        runs.append(run)
+    return runs
+
+
+def maybe_warn_and_escalate_bust(conn, project, host, gameplan, args):
+    """Called by `bust run` (never `resume`, `--force`, or `--dry-run`) before
+    execution. If this exact gameplan is already fully done against this
+    host, stop, warn, and offer the next gameplan in the escalation ladder --
+    accepted with 'y'. Falls back to an explicit rerun-anyway confirmation.
+    Mutates args.force when the user chooses to rerun. Returns the gameplan
+    to actually run."""
+    if args.force or args.dry_run or getattr(args, "resume", False) or not sys.stdin.isatty():
+        return gameplan
+
+    completed = bust_completed_runs(conn, project, host, gameplan)
+    if completed is None:
+        return gameplan
+
+    last_finished = max((r["finished_at"] for r in completed if r["finished_at"]), default=None)
+    total_findings = sum_findings_for_runs(conn, [r["id"] for r in completed])
+
+    section("Gameplan already completed", "yellow")
+    kv("Target", host["url"], color="yellow")
+    kv("Gameplan", gameplan.name, color="yellow")
+    kv("Last finished", last_finished or "unknown", color="yellow")
+    kv("Findings recorded", total_findings, color="yellow")
+
+    suggested_name = GAMEPLAN_ESCALATION.get(gameplan.name)
+    if suggested_name:
+        suggested = resolve_gameplan(suggested_name)
+        if bust_completed_runs(conn, project, host, suggested) is None:
+            answer = input(f"Run '{suggested_name}' instead? [y/N] ").strip().lower()
+            if answer in ("y", "yes"):
+                return suggested
+
+    answer = input(f"Rerun '{gameplan.name}' anyway? [y/N] ").strip().lower()
+    if answer in ("y", "yes"):
+        args.force = True
+        return gameplan
+
+    die("Nothing to do. Use --force to rerun, or pick a different --gameplan.")
+
+
+def maybe_warn_and_escalate_crack(conn, project, job, crackplan, args):
+    if args.force or args.dry_run or getattr(args, "resume", False) or not sys.stdin.isatty():
+        return crackplan
+
+    completed = crack_completed_runs(conn, project, job, crackplan)
+    if completed is None:
+        return crackplan
+
+    last_finished = max((r["finished_at"] for r in completed if r["finished_at"]), default=None)
+    total_cracked = sum_cracked_for_runs(conn, [r["id"] for r in completed])
+
+    section("Crackplan already completed", "yellow")
+    kv("Target", job["name"] or job["hash_file"], color="yellow")
+    kv("Crackplan", crackplan.name, color="yellow")
+    kv("Last finished", last_finished or "unknown", color="yellow")
+    kv("Hashes cracked", total_cracked, color="yellow")
+
+    suggested_name = CRACKPLAN_ESCALATION.get(crackplan.name)
+    if suggested_name:
+        suggested = resolve_crackplan(suggested_name)
+        if crack_completed_runs(conn, project, job, suggested) is None:
+            answer = input(f"Run '{suggested_name}' instead? [y/N] ").strip().lower()
+            if answer in ("y", "yes"):
+                return suggested
+
+    answer = input(f"Rerun '{crackplan.name}' anyway? [y/N] ").strip().lower()
+    if answer in ("y", "yes"):
+        args.force = True
+        return crackplan
+
+    die("Nothing to do. Use --force to rerun, or pick a different --gameplan.")
 
 
 def fmt_list(values: list[str] | list[int] | tuple | None, empty: str = "none") -> str:
@@ -825,6 +944,7 @@ def cmd_bust_run(args) -> None:
     project = require_project(conn, args.project)
     host = require_host(conn, project, args.url)
     gameplan = resolve_gameplan(args.gameplan)
+    gameplan = maybe_warn_and_escalate_bust(conn, project, host, gameplan, args)
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     print_gameplan_summary(project, host, gameplan, mode=mode, args=args)
@@ -887,6 +1007,7 @@ def cmd_crack_run(args) -> None:
     project = require_project(conn, args.project)
     job = require_job(conn, project, args.job)
     crackplan = resolve_crackplan(args.gameplan)
+    crackplan = maybe_warn_and_escalate_crack(conn, project, job, crackplan, args)
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     print_crackplan_summary(project, job, crackplan, mode=mode, args=args)
@@ -975,6 +1096,44 @@ def cmd_runs(args) -> None:
             f"{c(run['status'].ljust(10), status_color, bold=True)} "
             f"{c(run['stage_name'].ljust(24), 'magenta')} "
             f"{run['gameplan_name']} exit={run['exit_code']}"
+        )
+
+
+def format_duration(started_at, finished_at) -> str:
+    if not started_at or not finished_at:
+        return "-"
+    try:
+        start = datetime.strptime(started_at, "%Y-%m-%d %H:%M:%S")
+        end = datetime.strptime(finished_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return "-"
+    return elapsed_time((end - start).total_seconds())
+
+
+TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack"}
+
+
+def cmd_history(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.project)
+    rows = get_history(conn, project["id"], tool=args.tool, status=args.status, limit=args.limit)
+    section(f"History: {project['name']}", "cyan")
+    if not rows:
+        print("No scans recorded yet.")
+        return
+    for row in rows:
+        status_color = "green" if row["status"] == "completed" else "red" if row["status"] == "failed" else "yellow"
+        tool_label = TOOL_LABELS.get(row["tool"], row["tool"])
+        when = row["finished_at"] or row["started_at"] or "pending"
+        duration = format_duration(row["started_at"], row["finished_at"])
+        target = str(row["target"])
+        print(
+            f"{c(when.ljust(19), 'gray')} "
+            f"{c(tool_label.ljust(5), 'blue', bold=True)} "
+            f"{c(row['status'].ljust(11), status_color, bold=True)} "
+            f"{target[:32].ljust(32)} "
+            f"{c(row['gameplan_name'], 'magenta')}/{row['stage_name']} "
+            f"findings={row['finding_count']} took={duration}"
         )
 
 
@@ -1297,6 +1456,19 @@ for detailed options and examples. Only test systems you are authorized to asses
     runs.add_argument("project", help="project name")
     runs.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
     runs.set_defaults(func=cmd_runs)
+
+    history = sub.add_parser(
+        "history", help="show a unified, readable log of bust/fuzz/crack scans", formatter_class=formatter,
+        epilog="""examples:
+  obliquity history acme
+  obliquity history acme --tool hashcat
+  obliquity history acme --status failed --limit 20""",
+    )
+    history.add_argument("project", help="project name")
+    history.add_argument("--tool", choices=["feroxbuster", "ffuf", "hashcat"], help="filter by underlying tool")
+    history.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
+    history.add_argument("--limit", type=int, help="show only the N most recent entries")
+    history.set_defaults(func=cmd_history)
 
     report = sub.add_parser("report", help="generate project reports")
     report_sub = report.add_subparsers(dest="report_cmd", required=True)
