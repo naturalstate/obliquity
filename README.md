@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/user-attachments/assets/a7bae8da-558d-4892-9e03-49b0d2b0b9f2" alt="Obliquity" width="720" width="2431" height="1442" alt="obliquity_screenshot" />
+<img src="https://github.com/user-attachments/assets/a7bae8da-558d-4892-9e03-49b0d2b0b9f2" alt="Obliquity" height="1442" alt="obliquity_screenshot" />
 
 
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
