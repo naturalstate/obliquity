@@ -331,11 +331,29 @@ on every command (like `kubectl`/`docker` contexts):
 ```bash
 obliquity project list            # all projects + host/job/run counts; * marks active
 obliquity project use acme        # make acme the active project (persists)
-obliquity project current         # show the active project
+obliquity project current         # show the active project + its defaults (see below)
 obliquity project unset           # clear it
 obliquity project archive acme --yes   # back up files, drop the DB record (keeps a copy)
 obliquity project delete acme --yes    # PERMANENTLY delete DB records + files (no copy)
 ```
+
+`project current` shows the active project's root, created date, hosts (with
+their profile/tech/server metadata), crack jobs, and the **default gameplan
+for each tool** -- with `(default)` marking the ones still inheriting
+Obliquity's built-in default rather than a value you set.
+
+**Per-project default gameplans.** Instead of passing `--gameplan` on every
+run, set a default per tool per project so it auto-applies:
+
+```bash
+obliquity project set-gameplan bust generic-deep     # this project's bust default
+obliquity project set-gameplan crack rules-basic     # this project's crack default
+obliquity project set-gameplan fuzz --clear          # revert fuzz to the built-in default
+```
+
+Resolution precedence for a run's gameplan is **explicit `--gameplan` >
+project default > (bust only) host-metadata recommendation > built-in
+fallback**. An explicit `--gameplan` on the command line always wins.
 
 Once a project is active, its name is optional everywhere. Resolution
 precedence is **explicit name > `OBLIQUITY_PROJECT` env var > active
@@ -660,6 +678,11 @@ what it doesn't do yet. Roughly in the order they'd get built:
   to a different machine
 - **Wordlist compiler/deduper** (`obliquity wordlists build`) -- generate
   deduplicated staged lists (`quick`, `standard-delta`, `large-delta`)
+- **thc-hydra as a fourth pillar** -- *online* login/credential attacks
+  against a live service (web login forms, FTP, SSH, SMB, RDP, ...). Unlike
+  `crack` (offline hashcat/john against a hash file, no host), hydra is
+  intrinsically host/service-related, so it slots naturally into the
+  existing project -> host model and reuses the wordlist catalog
 - **Alternate-tool backends** -- `gobuster` as an alternative to
   feroxbuster, `wfuzz` as an alternative to ffuf, `john` as an alternative
   to hashcat, selectable per run (defaulting to the current trio) --
@@ -674,7 +697,7 @@ genuinely just an idea, lives in [`CHANGES.md`](CHANGES.md).
 
 This is an actively developed MVP, not yet accepting external
 contributions in a structured way -- issues and ideas are still welcome.
-`pytest` (66 tests as of this writing) covers the core adapters, resume
+`pytest` (92 tests as of this writing) covers the core adapters, resume
 logic, and CLI wiring; run it with:
 
 ```bash

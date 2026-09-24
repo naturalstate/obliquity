@@ -615,6 +615,37 @@ matches (documented by a new test).
   `plan`, not before every `run`. Feroxbuster-style: the terminal stays put
   instead of scrolling.
 
+### 24. Per-project default gameplans + enriched `project current`
+
+- **`obliquity project set-gameplan <bust|fuzz|crack> <name>`**: sets a
+  per-project default gameplan for a tool, stored on the project row
+  (`default_bust_gameplan`/`default_fuzz_gameplan`/`default_crackplan`,
+  added via the existing `_ensure_column` migration path so old DBs upgrade
+  in place). Once set, `bust`/`fuzz`/`crack` for that project use it without
+  needing `--gameplan` every time. `--clear` reverts a tool to Obliquity's
+  built-in default. The name is validated against the built-in/JSON resolver
+  at set-time, so a typo fails immediately instead of at the next run. The
+  DB helper takes the column from an allowlist (`PROJECT_DEFAULT_COLUMNS`)
+  keyed by the argparse-validated `tool`, so the column name is never taken
+  from user input.
+- **Gameplan resolution precedence** across all three tools is now:
+  explicit `--gameplan` > project default > (bust only) host-metadata
+  recommendation > built-in fallback (`generic-quick`/
+  `parameter-names-quick`/`quick-dictionary`). The three tools'
+  `--gameplan` defaults changed from hardcoded strings to `None` so the
+  project default actually gets a chance to apply.
+- **`obliquity project current` is no longer one line.** It now shows the
+  active project's root, created date, host count (with each host's
+  profile/tech/server metadata), crack-job count, and a **Default
+  gameplans** block listing each tool's effective default -- marking
+  built-in fallbacks with `(default)` so it's obvious which are explicitly
+  set vs inherited. bust shows `(default) auto from host metadata, else
+  generic-quick` when unset, since bust's fallback is host-derived rather
+  than a single fixed name.
+- Tests: `DefaultGameplanTests` covers new projects starting with no
+  defaults, setting each tool's default, and clearing one without
+  disturbing the others (92 tests total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
@@ -660,6 +691,7 @@ integration, cross-tool data sharing).
 | Indefinite crack campaign mode (`--campaign full --until-complete`, runtime/budget/GPU-temp limits) | Not built | Current `crack run` executes a fixed, finite crackplan and stops. An open-ended "keep going until X" mode is a different execution model layered on top of the existing staged runner, not a replacement for it. |
 | Recon-tool-sourced fuzz targets (`katana`, `gau`, `waybackurls`, `httpx` feeding endpoint lists into fuzz gameplans) | Not built | `fuzz` today only takes an endpoint/template/request you already know about. Sourcing endpoints from crawling/wayback tools first is several new tool integrations plus a new "route collection" stage type before fuzzing even starts. |
 | Request-based auto fuzz-point detection (parse a raw Burp request, auto-identify query params/POST fields/JSON fields/headers/cookies/path segments/IDs as candidate fuzz points) | Not built | `fuzz run --request` today fuzzes wherever *you* put the `FUZZ` marker in the raw request -- there's no parsing of the request to suggest fuzz points itself. A real, self-contained parsing feature; doesn't require any other tool integration first. |
+| **thc-hydra as a new pillar -- online login/credential attacks (your call, 2026-09-24)** | Not built (roadmapped) | New fourth pillar for *online* password guessing against a live service: web login forms (`http-post-form`/`http-get-form`), FTP, SSH, SMB, RDP, etc. Unlike `crack` (hashcat/john -- **offline**, no host, just a hash file), hydra is intrinsically **host/service-related**: it targets a URL/host:port and a service, which is exactly what the project/host model already stores. So it slots into the existing project -> host -> gameplan/run model far more naturally than `crack` did -- a hydra "gameplan" would be (service, username-list, password-list, form spec, rate/lockout controls). It's wordlist-driven, so it reuses the wordlist catalog. Real design work needed: service-specific target syntax, the http-form success/fail-condition string, lockout/rate-limiting safety rails, and how findings (valid creds) are stored/reported. Build after the current bust/fuzz/crack polish is done. |
 
 ### Tier 3 -- larger architectural changes, revisit after Tier 1/2
 

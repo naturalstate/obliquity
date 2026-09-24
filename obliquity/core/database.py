@@ -123,7 +123,26 @@ def connect(db_path: Path) -> sqlite3.Connection:
     _ensure_column(conn, "runs", "tool", "TEXT NOT NULL DEFAULT 'feroxbuster'")
     _ensure_column(conn, "runs", "operation_category", "TEXT NOT NULL DEFAULT 'content-path'")
     _ensure_column(conn, "runs", "operation_scope", "TEXT")
+    _ensure_column(conn, "projects", "default_bust_gameplan", "TEXT")
+    _ensure_column(conn, "projects", "default_fuzz_gameplan", "TEXT")
+    _ensure_column(conn, "projects", "default_crackplan", "TEXT")
     return conn
+
+
+# tool name -> the projects column holding that tool's per-project default plan
+PROJECT_DEFAULT_COLUMNS = {
+    "bust": "default_bust_gameplan",
+    "fuzz": "default_fuzz_gameplan",
+    "crack": "default_crackplan",
+}
+
+
+def set_project_default_gameplan(conn: sqlite3.Connection, project_id: int, tool: str, value: str | None) -> None:
+    # `tool` must be a key of PROJECT_DEFAULT_COLUMNS (callers validate it, e.g.
+    # via argparse choices) -- the column name is never taken from user input.
+    column = PROJECT_DEFAULT_COLUMNS[tool]
+    conn.execute(f"UPDATE projects SET {column} = ? WHERE id = ?", (value, project_id))
+    conn.commit()
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

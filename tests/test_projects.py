@@ -10,6 +10,7 @@ from obliquity.core.database import (
     get_project,
     list_hosts,
     list_projects,
+    set_project_default_gameplan,
 )
 
 
@@ -36,6 +37,36 @@ class ListProjectsTests(TestCase):
             self.assertEqual(by_name["alpha"]["host_count"], 0)
             self.assertEqual(by_name["bravo"]["run_count"], 0)
             self.assertEqual(by_name["bravo"]["job_count"], 0)
+
+
+class DefaultGameplanTests(TestCase):
+    def test_new_project_has_no_defaults(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+            self.assertIsNone(p["default_bust_gameplan"])
+            self.assertIsNone(p["default_fuzz_gameplan"])
+            self.assertIsNone(p["default_crackplan"])
+
+    def test_set_and_clear_each_tool_default(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+
+            set_project_default_gameplan(conn, p["id"], "bust", "generic-deep")
+            set_project_default_gameplan(conn, p["id"], "fuzz", "api-request-quick")
+            set_project_default_gameplan(conn, p["id"], "crack", "rules-basic")
+            refreshed = get_project(conn, "acme")
+            self.assertEqual(refreshed["default_bust_gameplan"], "generic-deep")
+            self.assertEqual(refreshed["default_fuzz_gameplan"], "api-request-quick")
+            self.assertEqual(refreshed["default_crackplan"], "rules-basic")
+
+            set_project_default_gameplan(conn, p["id"], "crack", None)
+            self.assertIsNone(get_project(conn, "acme")["default_crackplan"])
+            # clearing one tool leaves the others untouched
+            self.assertEqual(get_project(conn, "acme")["default_bust_gameplan"], "generic-deep")
 
 
 class DeleteProjectTests(TestCase):

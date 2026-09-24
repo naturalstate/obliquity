@@ -37,6 +37,7 @@ from obliquity.core.database import (
     connect,
     create_project,
     list_projects,
+    set_project_default_gameplan,
     delete_crack_job,
     delete_host,
     delete_project,
@@ -555,6 +556,29 @@ def cmd_project_use(args) -> None:
     print(c("Commands now default to this project; pass a name or --project, or set OBLIQUITY_PROJECT, to override.", "gray"))
 
 
+# The built-in gameplan each tool falls back to when a project has no default
+# set. bust is special: with no project default it recommends a plan from the
+# target host's metadata (recommend_gameplan), so there's no single fixed name.
+CRACK_DEFAULT_FALLBACK = "quick-dictionary"
+FUZZ_DEFAULT_FALLBACK = "parameter-names-quick"
+
+
+def _default_gameplan_display(project) -> list[tuple[str, str]]:
+    """(tool, description) pairs describing each tool's effective default plan
+    for a project, marking built-in fallbacks with '(default)'."""
+    rows = []
+    bust = project["default_bust_gameplan"]
+    if bust:
+        rows.append(("bust", bust))
+    else:
+        rows.append(("bust", "(default) auto from host metadata, else generic-quick"))
+    fuzz = project["default_fuzz_gameplan"]
+    rows.append(("fuzz", fuzz if fuzz else f"{FUZZ_DEFAULT_FALLBACK} (default)"))
+    crack = project["default_crackplan"]
+    rows.append(("crack", crack if crack else f"{CRACK_DEFAULT_FALLBACK} (default)"))
+    return rows
+
+
 def cmd_project_current(args) -> None:
     env_project = os.environ.get("OBLIQUITY_PROJECT")
     name = env_project or active_project()
@@ -565,8 +589,68 @@ def cmd_project_current(args) -> None:
     kv("Active project", name)
     kv("Source", "OBLIQUITY_PROJECT env" if env_project else "config")
     conn = connect(DB_PATH)
-    if get_project(conn, name) is None:
+    project = get_project(conn, name)
+    if project is None:
         print(c("warning: this project no longer exists (was it archived?)", "yellow"))
+        return
+
+    hosts = list_hosts(conn, project["id"])
+    jobs = list_crack_jobs(conn, project["id"])
+    kv("Root", project["root_dir"])
+    kv("Created", project["created_at"])
+    bullet("Hosts", len(hosts))
+    if hosts:
+        for h in hosts:
+            bullet("  " + h["url"], _host_meta_summary(h), color="gray")
+    bullet("Crack jobs", len(jobs))
+
+    subsection("Default gameplans", "magenta")
+    for tool, desc in _default_gameplan_display(project):
+        bullet(tool, desc)
+    print(c("Change with: obliquity project set-gameplan <bust|fuzz|crack> <name> "
+            "(or --clear to revert to the built-in default).", "gray"))
+
+
+def _host_meta_summary(host) -> str:
+    parts = []
+    for field in ("profile", "tech", "server"):
+        val = host[field]
+        if val:
+            parts.append(f"{field}={val}")
+    return ", ".join(parts) if parts else "no metadata"
+
+
+def cmd_project_set_gameplan(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    tool = args.tool
+    if args.clear:
+        set_project_default_gameplan(conn, project["id"], tool, None)
+        section("Project default cleared", "green")
+        kv("Project", project["name"])
+        kv(f"{tool} default", "(reverted to built-in default)")
+        return
+
+    name = args.name
+    if not name:
+        die(f"provide a gameplan name, or use --clear to revert {tool} to the built-in default")
+    # Validate the plan exists (built-in name or JSON path) before saving, so a
+    # typo fails now instead of at the next run.
+    resolver = {
+        "bust": resolve_gameplan,
+        "fuzz": resolve_fuzz_plan,
+        "crack": resolve_crackplan,
+    }[tool]
+    try:
+        resolver(name)
+    except Exception as exc:  # noqa: BLE001 -- surface any resolution failure as a friendly error
+        die(f"not a valid {tool} gameplan: {name} ({exc})")
+
+    set_project_default_gameplan(conn, project["id"], tool, name)
+    section("Project default set", "green")
+    kv("Project", project["name"])
+    kv(f"{tool} default", name)
+    print(c(f"{tool} commands for this project now use this gameplan unless you pass --gameplan.", "gray"))
 
 
 def cmd_project_unset(args) -> None:
@@ -1021,7 +1105,8 @@ def cmd_fuzz_run(args) -> None:
     normalize_host_target(args)
     project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
-    plan = resolve_fuzz_plan(args.gameplan)
+    fuzz_name = args.gameplan or project["default_fuzz_gameplan"] or "parameter-names-quick"
+    plan = resolve_fuzz_plan(fuzz_name)
     url_template, request_file = _fuzz_url_template(host["url"], plan, args)
     mode = "Plan" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     section(f"Obliquity Fuzz: {mode}", "cyan")
@@ -1076,9 +1161,12 @@ def cmd_fuzz_resume(args) -> None:
     cmd_fuzz_run(args)
 
 
-def resolve_bust_gameplan_choice(host, args) -> tuple:
+def resolve_bust_gameplan_choice(project, host, args) -> tuple:
+    # explicit --gameplan > project default > host-metadata recommendation > generic-quick
     if args.gameplan:
         return resolve_gameplan(args.gameplan), None
+    if project["default_bust_gameplan"]:
+        return resolve_gameplan(project["default_bust_gameplan"]), "project default"
     name, reason = recommend_gameplan(host)
     return resolve_gameplan(name), reason
 
@@ -1088,7 +1176,7 @@ def cmd_bust_plan(args) -> None:
     normalize_host_target(args)
     project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
-    gameplan, reason = resolve_bust_gameplan_choice(host, args)
+    gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
     print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args, recommended_reason=reason)
 
 
@@ -1097,7 +1185,7 @@ def cmd_bust_run(args) -> None:
     normalize_host_target(args)
     project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
-    gameplan, reason = resolve_bust_gameplan_choice(host, args)
+    gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
     original_name = gameplan.name
     gameplan = maybe_warn_and_escalate_bust(conn, project, host, gameplan, args)
     if gameplan.name != original_name:
@@ -1155,7 +1243,8 @@ def cmd_crack_plan(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
     job = require_job(conn, project, args.job)
-    crackplan = resolve_crackplan(args.gameplan)
+    crack_name = args.gameplan or project["default_crackplan"] or "quick-dictionary"
+    crackplan = resolve_crackplan(crack_name)
     print_crackplan_summary(project, job, crackplan, mode="Plan Preview", args=args)
 
 
@@ -1163,7 +1252,8 @@ def cmd_crack_run(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
     job = require_job(conn, project, args.job)
-    crackplan = resolve_crackplan(args.gameplan)
+    crack_name = args.gameplan or project["default_crackplan"] or "quick-dictionary"
+    crackplan = resolve_crackplan(crack_name)
     crackplan = maybe_warn_and_escalate_crack(conn, project, job, crackplan, args)
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
@@ -1384,7 +1474,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
 
     fuzz_scan_args = argparse.ArgumentParser(add_help=False)
-    fuzz_scan_args.add_argument("--gameplan", default="parameter-names-quick", help="ffuf gameplan name")
+    fuzz_scan_args.add_argument("--gameplan", default=None, help="ffuf gameplan name (default: the project default, else parameter-names-quick)")
     fuzz_scan_args.add_argument("--wordlist", help="override the gameplan wordlist")
     fuzz_scan_args.add_argument("--endpoint", help="path for parameter-name fuzzing")
     fuzz_scan_args.add_argument("--template", help="URL template containing FUZZ")
@@ -1502,6 +1592,24 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     puns = project_sub.add_parser("unset", help="clear the active project", formatter_class=formatter)
     puns.set_defaults(func=cmd_project_unset)
+
+    psg = project_sub.add_parser(
+        "set-gameplan",
+        help="set (or clear) a project's default gameplan for a tool",
+        description="Set the default gameplan a tool uses for this project, so you "
+        "don't have to pass --gameplan every time. Explicit --gameplan on a run "
+        "always overrides it. Use --clear to revert to Obliquity's built-in default.",
+        epilog="examples:\n"
+        "  obliquity project set-gameplan bust generic-deep\n"
+        "  obliquity project set-gameplan crack rules-basic --project acme\n"
+        "  obliquity project set-gameplan fuzz --clear",
+        formatter_class=formatter,
+    )
+    psg.add_argument("tool", choices=["bust", "fuzz", "crack"], help="which tool's default to change")
+    psg.add_argument("name", nargs="?", help="built-in gameplan name or JSON path (omit with --clear)")
+    psg.add_argument("--project", help="project name (optional if an active project is set via 'project use')")
+    psg.add_argument("--clear", action="store_true", help="revert to the built-in default for this tool")
+    psg.set_defaults(func=cmd_project_set_gameplan)
 
     pc = project_sub.add_parser(
         "create",
@@ -1624,7 +1732,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
 
     crack_scan_args = argparse.ArgumentParser(add_help=False)
-    crack_scan_args.add_argument("--gameplan", default="quick-dictionary", help="built-in name or JSON path (default: quick-dictionary)")
+    crack_scan_args.add_argument("--gameplan", default=None, help="built-in name or JSON path (default: the project default, else quick-dictionary)")
     crack_scan_args.add_argument("--dry-run", action="store_true", help="print commands without running hashcat")
     crack_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     crack_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
@@ -1669,7 +1777,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         parents=[crack_target_args],
         epilog="example:\n  obliquity crack plan acme --gameplan quick-dictionary",
     )
-    cp.add_argument("--gameplan", default="quick-dictionary", help="built-in name or JSON path (default: quick-dictionary)")
+    cp.add_argument("--gameplan", default=None, help="built-in name or JSON path (default: the project default, else quick-dictionary)")
     cp.set_defaults(func=cmd_crack_plan)
 
     cr = crack_sub.add_parser(
