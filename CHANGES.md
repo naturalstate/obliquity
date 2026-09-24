@@ -594,6 +594,27 @@ now tech -> profile -> server -> default. Updated `host add` help text and
 the README with a roles table. A tech value in the profile slot no longer
 matches (documented by a new test).
 
+### 23. `project delete` + much terser per-stage output
+
+- **`obliquity project delete <name> --yes`**: permanently removes a
+  project's DB records (cascading to hosts/runs/findings/crack jobs/cracked
+  hashes) and its files on disk; clears the active project if it was the one
+  deleted. Requires `--yes`; points at `project archive` for the
+  keep-a-copy path. (The cascade delete is now covered by a test, which also
+  incidentally verifies the FK ON DELETE CASCADE the old A5 note worried
+  about.)
+- **Terser execution output**: per-stage output went from ~15 lines
+  (Running block + full command + Finished block, with the output paths
+  printed twice) down to 2 lines per stage -- a `> N/T stage  wordlist`
+  header that stays, the animated spinner in place, then a `OK/INT/FAIL N/T
+  stage  N new` result line that overwrites the spinner. The duplicated
+  output-file paths are gone (the run summary's "Output root" shows where
+  files land once; exact paths remain in `runs`/`report`/`history`), and the
+  full command is no longer dumped on real runs (still shown by `--dry-run`,
+  which is its whole point). The "Stages queued" preview now only prints for
+  `plan`, not before every `run`. Feroxbuster-style: the terminal stays put
+  instead of scrolling.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

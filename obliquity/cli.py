@@ -382,38 +382,48 @@ def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, ar
         option_bits.append("force-rerun=true")
     kv("Run options", ", ".join(option_bits) if option_bits else "default")
 
-    section("Stages queued", "blue")
-    for row in preview_plan(host["url"], gameplan):
-        print_stage_summary(row)
+    # Only expand the per-stage detail for a plan preview; on a real run/resume
+    # the compact per-stage execution output covers it, so don't print it twice.
+    if mode == "Plan Preview":
+        section("Stages queued", "blue")
+        for row in preview_plan(host["url"], gameplan):
+            print_stage_summary(row)
 
 
+def _stage_n(event: dict) -> str:
+    return f"{event.get('stage_number')}/{event.get('total_stages')} {event.get('stage')}"
+
+
+def _clear_progress_line() -> None:
+    if supports_color():
+        print("\r" + " " * 120 + "\r", end="", flush=True)
+
+
+# Per-stage execution output is deliberately terse (2 lines/stage): one header
+# line that stays, the animated spinner in place, then a result line that
+# overwrites the spinner. Exact output-file paths live in the run summary's
+# "Output root" and in `runs`/`report`/`history` -- not repeated per stage.
 def print_run_event(event: dict) -> None:
     action = event.get("action")
-    stage_label = f"Stage {event.get('stage_number')}/{event.get('total_stages')}: {event.get('stage')}"
+    n = _stage_n(event)
 
     if action == "skipped":
-        subsection(f"Skipped {stage_label}", "yellow")
-        bullet("Reason", event.get("reason", "already completed"), color="yellow")
+        print(c(f"  - {n}  skipped ({event.get('reason', 'already completed')})", "yellow"))
         return
 
-    if action == "planned":
-        subsection(f"Planned {stage_label}", "magenta")
+    if action == "planned":  # dry-run: the command is the whole point, keep it
+        subsection(f"Planned {n}", "magenta")
         bullet("Wordlist", event.get("wordlist"))
         bullet("Extensions", fmt_list(event.get("extensions")))
         bullet("Recursion", fmt_recursion(bool(event.get("recursion")), event.get("depth")))
-        bullet("JSON output", event.get("json_output"))
         command_block(event.get("command", ""))
         return
 
     if action == "starting":
-        subsection(f"Running {stage_label}", "green")
-        bullet("Wordlist", event.get("wordlist"))
-        bullet("Extensions", fmt_list(event.get("extensions")))
-        bullet("Recursion", fmt_recursion(bool(event.get("recursion")), event.get("depth")))
-        bullet("Raw output", event.get("raw_output"))
-        bullet("JSON output", event.get("json_output"))
-        command_block(event.get("command", ""))
-        print(c("This stage is running now. Output is being written to the files above.", "gray"))
+        wl = Path(event.get("wordlist") or "").name
+        exts = event.get("extensions") or []
+        extbit = c(f"  +{fmt_list(exts)}", "gray") if exts else ""
+        print(c(f"  > {n}", "green", bold=True) + c(f"   {wl}", "cyan") + extbit)
         return
 
     if action == "progress":
@@ -422,18 +432,14 @@ def print_run_event(event: dict) -> None:
         return
 
     if action == "ran":
-        if supports_color():
-            print("\r" + " " * 120 + "\r", end="", flush=True)
+        _clear_progress_line()
         status = event.get("status", "unknown")
-        color = "green" if status == "completed" else "yellow" if status == "interrupted" else "red"
-        subsection(f"Finished {stage_label}", color)
-        bullet("Status", status, color=color)
-        bullet("Exit code", event.get("exit_code"), color=color)
-        bullet("New findings", event.get("new_findings"), color=color)
-        bullet("Raw output", event.get("raw_output"))
-        bullet("JSON output", event.get("json_output"))
+        mark = {"completed": "OK", "interrupted": "INT"}.get(status, "FAIL")
+        color = {"completed": "green", "interrupted": "yellow"}.get(status, "red")
+        line = c(f"  {mark} {n}", color, bold=True) + c(f"   {event.get('new_findings')} new", color)
         if event.get("error"):
-            bullet("Error", event["error"], color=color)
+            line += c(f"   {event['error']}", color)
+        print(line)
         return
 
 
@@ -467,21 +473,22 @@ def print_crackplan_summary(project: dict, job: dict, crackplan, *, mode: str, a
         option_bits.append("force-rerun=true")
     kv("Run options", ", ".join(option_bits) if option_bits else "default")
 
-    section("Stages queued", "blue")
-    for row in preview_crackplan(crackplan):
-        print_crack_stage_summary(row)
+    if mode == "Plan Preview":
+        section("Stages queued", "blue")
+        for row in preview_crackplan(crackplan):
+            print_crack_stage_summary(row)
 
 
 def print_crack_event(event: dict) -> None:
     action = event.get("action")
-    stage_label = f"Stage {event.get('stage_number')}/{event.get('total_stages')}: {event.get('stage')}"
+    n = _stage_n(event)
 
     if action == "skipped":
-        subsection(f"Skipped {stage_label}", "yellow")
-        bullet("Reason", event.get("reason", "already completed"), color="yellow")
+        print(c(f"  - {n}  skipped ({event.get('reason', 'already completed')})", "yellow"))
         return
 
-    def _crack_stage_fields() -> None:
+    if action == "planned":  # dry-run: keep the full command + fields
+        subsection(f"Planned {n}", "magenta")
         bullet("Attack mode", event.get("attack_mode"))
         if event.get("wordlist"):
             bullet("Wordlist", event["wordlist"])
@@ -491,23 +498,17 @@ def print_crack_event(event: dict) -> None:
             bullet("Rules", fmt_list(event["rules"]))
         if event.get("mask"):
             bullet("Mask", event["mask"])
-
-    if action == "planned":
-        subsection(f"Planned {stage_label}", "magenta")
-        _crack_stage_fields()
-        bullet("Cracked output", event.get("result_output"))
         command_block(event.get("command", ""))
         return
 
     if action == "starting":
-        subsection(f"Running {stage_label}", "green")
-        _crack_stage_fields()
+        detail = Path(event["wordlist"]).name if event.get("wordlist") else (event.get("mask") or "")
+        line = c(f"  > {n}", "green", bold=True) + c(f"   {event.get('attack_mode')}", "cyan")
+        if detail:
+            line += c(f"  {detail}", "cyan")
         if event.get("resuming"):
-            bullet("Resuming", "from a previous hashcat checkpoint (--restore)", color="green")
-        bullet("Raw output", event.get("raw_output"))
-        bullet("Cracked output", event.get("result_output"))
-        command_block(event.get("command", ""))
-        print(c("This stage is running now. hashcat exiting with 'exhausted' (no hashes left to try) is normal, not a failure.", "gray"))
+            line += c("  (resuming --restore)", "green")
+        print(line)
         return
 
     if action == "progress":
@@ -516,18 +517,14 @@ def print_crack_event(event: dict) -> None:
         return
 
     if action == "ran":
-        if supports_color():
-            print("\r" + " " * 120 + "\r", end="", flush=True)
+        _clear_progress_line()
         status = event.get("status", "unknown")
-        color = "green" if status == "completed" else "yellow" if status == "interrupted" else "red"
-        subsection(f"Finished {stage_label}", color)
-        bullet("Status", status, color=color)
-        bullet("Exit code", event.get("exit_code"), color=color)
-        bullet("Newly cracked", event.get("new_findings"), color=color)
-        bullet("Raw output", event.get("raw_output"))
-        bullet("Cracked output", event.get("result_output"))
+        mark = {"completed": "OK", "interrupted": "INT"}.get(status, "FAIL")
+        color = {"completed": "green", "interrupted": "yellow"}.get(status, "red")
+        line = c(f"  {mark} {n}", color, bold=True) + c(f"   {event.get('new_findings')} cracked", color)
         if event.get("error"):
-            bullet("Error", event["error"], color=color)
+            line += c(f"   {event['error']}", color)
+        print(line)
         return
 
 
@@ -629,6 +626,31 @@ def cmd_project_archive(args) -> None:
     section("Project archived", "green")
     kv("Project", project["name"])
     kv("Backup", destination if destination.exists() else "No project files existed")
+
+
+def cmd_project_delete(args) -> None:
+    conn = connect(DB_PATH)
+    project = get_project(conn, args.name)
+    if project is None:
+        die(f"project not found: {args.name}")
+    root = Path(project["root_dir"])
+    if not args.yes:
+        section("Confirm project deletion", "red")
+        kv("Project", project["name"], color="red")
+        kv("Files to delete", root, color="red")
+        print(c("This PERMANENTLY deletes the project's database records (hosts, runs, "
+                "findings, crack jobs, cracked hashes) and its files on disk.", "red"))
+        print(c("This cannot be undone. To keep a copy instead, use: obliquity project archive", "yellow"))
+        print(c("Re-run with --yes to delete.", "red", bold=True))
+        return
+
+    if root.exists():
+        shutil.rmtree(root)
+    delete_project(conn, project["id"])
+    if (os.environ.get("OBLIQUITY_PROJECT") or active_project()) == project["name"]:
+        clear_active_project()
+    section("Project deleted", "green")
+    kv("Project", project["name"])
 
 
 def cmd_host_add(args) -> None:
@@ -1501,6 +1523,18 @@ for detailed options and examples. Only test systems you are authorized to asses
     pa.add_argument("--yes", action="store_true", help="archive without prompting")
     pa.add_argument("--if-exists", action="store_true", help="succeed when the project does not exist")
     pa.set_defaults(func=cmd_project_archive)
+
+    pd = project_sub.add_parser(
+        "delete",
+        help="permanently delete a project (DB records + files on disk)",
+        description="Permanently delete a project: its database records and its files "
+        "on disk. Cannot be undone -- use 'project archive' to keep a backup instead.",
+        formatter_class=formatter,
+        epilog="example:\n  obliquity project delete acme --yes",
+    )
+    pd.add_argument("name", help="project name")
+    pd.add_argument("--yes", action="store_true", help="delete without prompting")
+    pd.set_defaults(func=cmd_project_delete)
 
     host = sub.add_parser("host", help="add, inspect, update, or remove project hosts")
     host_sub = host.add_subparsers(dest="host_cmd", required=True)

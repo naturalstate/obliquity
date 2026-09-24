@@ -2,7 +2,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from obliquity.core.database import add_host, connect, create_project, list_projects
+from obliquity.core.database import (
+    add_host,
+    connect,
+    create_project,
+    delete_project,
+    get_project,
+    list_hosts,
+    list_projects,
+)
 
 
 class ListProjectsTests(TestCase):
@@ -28,3 +36,24 @@ class ListProjectsTests(TestCase):
             self.assertEqual(by_name["alpha"]["host_count"], 0)
             self.assertEqual(by_name["bravo"]["run_count"], 0)
             self.assertEqual(by_name["bravo"]["job_count"], 0)
+
+
+class DeleteProjectTests(TestCase):
+    def test_delete_removes_project_and_cascades_to_hosts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "victim", root / "victim")
+            add_host(conn, p["id"], "https://a.test")
+            add_host(conn, p["id"], "https://b.test")
+            self.assertEqual(len(list_hosts(conn, p["id"])), 2)
+
+            self.assertTrue(delete_project(conn, p["id"]))
+            self.assertIsNone(get_project(conn, "victim"))
+            # FK ON DELETE CASCADE should have removed the hosts too
+            self.assertEqual(list_hosts(conn, p["id"]), [])
+
+    def test_delete_missing_project_returns_false(self) -> None:
+        with TemporaryDirectory() as tmp:
+            conn = connect(Path(tmp) / "obliquity.db")
+            self.assertFalse(delete_project(conn, 999))

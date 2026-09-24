@@ -333,6 +333,8 @@ obliquity project list            # all projects + host/job/run counts; * marks 
 obliquity project use acme        # make acme the active project (persists)
 obliquity project current         # show the active project
 obliquity project unset           # clear it
+obliquity project archive acme --yes   # back up files, drop the DB record (keeps a copy)
+obliquity project delete acme --yes    # PERMANENTLY delete DB records + files (no copy)
 ```
 
 Once a project is active, its name is optional everywhere. Resolution
