@@ -23,6 +23,7 @@ from obliquity.core.console import (
     subsection,
     supports_color,
 )
+from obliquity.core.config import active_project, clear_active_project, set_active_project
 from obliquity.core.crack_runner import preview_plan as preview_crackplan, run_crackplan
 from obliquity.core.crackplan import (
     find_builtin_crackplan,
@@ -121,6 +122,38 @@ def require_project(conn, name: str):
     if project is None:
         die(f"project not found: {name}")
     return project
+
+
+def resolve_project(conn, args):
+    """Resolve which project a command targets. Precedence: explicit positional
+    > OBLIQUITY_PROJECT env var > the active project set with `project use`.
+    Prints a note when it wasn't given explicitly, so it's never a surprise
+    which project a command acted on."""
+    explicit = getattr(args, "project", None)
+    env_project = os.environ.get("OBLIQUITY_PROJECT")
+    name = explicit or env_project or active_project()
+    if not name:
+        die("no project given, and no active project is set. Pass a project name, "
+            "or select one with: obliquity project use <name>")
+    if not explicit:
+        source = "OBLIQUITY_PROJECT env" if env_project else "active project"
+        print(c(f"Using {source}: {name}", "gray"))
+    project = get_project(conn, name)
+    if project is None:
+        die(f"project not found: {name}")
+    return project
+
+
+def normalize_host_target(args) -> None:
+    """bust/fuzz take an optional `project` then an optional `url`. If the user
+    gives a single positional that's a URL (contains '://') while there's an
+    active project, they meant it as the host -- shuffle it into `url` so the
+    project resolves from the active/env setting. Project names never contain
+    '://', so this is unambiguous."""
+    proj = getattr(args, "project", None)
+    if proj and "://" in proj and not getattr(args, "url", None):
+        args.url = proj
+        args.project = None
 
 
 def require_host(conn, project: dict, url: str | None):
@@ -500,17 +533,49 @@ def print_crack_event(event: dict) -> None:
 def cmd_project_list(args) -> None:
     conn = connect(DB_PATH)
     projects = list_projects(conn)
+    active = os.environ.get("OBLIQUITY_PROJECT") or active_project()
     section("Projects", "cyan")
     if not projects:
         print("No projects yet. Create one with: obliquity project create <name>")
         return
     for p in projects:
-        subsection(p["name"], "magenta")
+        marker = c("  * active", "green", bold=True) if p["name"] == active else ""
+        subsection(p["name"] + marker, "magenta")
         bullet("Hosts", p["host_count"])
         bullet("Crack jobs", p["job_count"])
         bullet("Runs", p["run_count"])
         bullet("Created", p["created_at"])
         bullet("Root", p["root_dir"])
+
+
+def cmd_project_use(args) -> None:
+    conn = connect(DB_PATH)
+    project = require_project(conn, args.name)  # validate it exists (explicit name)
+    set_active_project(project["name"])
+    section("Active project set", "green")
+    kv("Active project", project["name"])
+    print(c("Commands now default to this project; pass a name or --project, or set OBLIQUITY_PROJECT, to override.", "gray"))
+
+
+def cmd_project_current(args) -> None:
+    env_project = os.environ.get("OBLIQUITY_PROJECT")
+    name = env_project or active_project()
+    section("Active project", "cyan")
+    if not name:
+        print("No active project set. Set one with: obliquity project use <name>")
+        return
+    kv("Active project", name)
+    kv("Source", "OBLIQUITY_PROJECT env" if env_project else "config")
+    conn = connect(DB_PATH)
+    if get_project(conn, name) is None:
+        print(c("warning: this project no longer exists (was it archived?)", "yellow"))
+
+
+def cmd_project_unset(args) -> None:
+    clear_active_project()
+    section("Active project cleared", "green")
+    print(c("Commands will now require an explicit project name again "
+            "(unless OBLIQUITY_PROJECT is set).", "gray"))
 
 
 def cmd_project_create(args) -> None:
@@ -567,7 +632,7 @@ def cmd_project_archive(args) -> None:
 
 def cmd_host_add(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     host = add_host(conn, project["id"], args.url, args.profile, args.server, args.tech, args.notes)
     section("Host added", "green")
     kv("Project", project["name"])
@@ -579,7 +644,7 @@ def cmd_host_add(args) -> None:
 
 def cmd_host_list(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     hosts = list_hosts(conn, project["id"])
     section(f"Hosts: {project['name']}", "cyan")
     if not hosts:
@@ -596,7 +661,7 @@ def cmd_host_list(args) -> None:
 
 def cmd_host_update(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     if not any([args.url_new, args.profile, args.server is not None, args.tech is not None, args.notes is not None]):
         die("nothing to update. Use --url-new, --profile, --server, --tech, or --notes")
     host = update_host(
@@ -622,7 +687,7 @@ def cmd_host_update(args) -> None:
 
 def cmd_host_remove(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     if not args.yes:
         section("Confirm host removal", "yellow")
         kv("Project", project["name"], color="yellow")
@@ -640,7 +705,7 @@ def cmd_host_remove(args) -> None:
 
 def cmd_crack_job_add(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     hash_file = str(Path(args.hashfile).expanduser().resolve())
     if not Path(hash_file).exists():
         die(f"hash file not found: {hash_file}")
@@ -654,7 +719,7 @@ def cmd_crack_job_add(args) -> None:
 
 def cmd_crack_job_list(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     jobs = list_crack_jobs(conn, project["id"])
     section(f"Crack jobs: {project['name']}", "cyan")
     if not jobs:
@@ -670,7 +735,7 @@ def cmd_crack_job_list(args) -> None:
 
 def cmd_crack_job_remove(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     if not args.yes:
         section("Confirm crack job removal", "yellow")
         kv("Project", project["name"], color="yellow")
@@ -881,7 +946,7 @@ def cmd_wordlists_setup(args) -> None:
 
 def cmd_coverage(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     host = None
     if args.url:
         host = get_host(conn, project["id"], args.url)
@@ -930,7 +995,8 @@ def _fuzz_url_template(host_url: str, plan, args) -> tuple[str | None, str | Non
 
 def cmd_fuzz_run(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    normalize_host_target(args)
+    project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
     plan = resolve_fuzz_plan(args.gameplan)
     url_template, request_file = _fuzz_url_template(host["url"], plan, args)
@@ -996,7 +1062,8 @@ def resolve_bust_gameplan_choice(host, args) -> tuple:
 
 def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    normalize_host_target(args)
+    project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(host, args)
     print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args, recommended_reason=reason)
@@ -1004,7 +1071,8 @@ def cmd_bust_plan(args) -> None:
 
 def cmd_bust_run(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    normalize_host_target(args)
+    project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(host, args)
     original_name = gameplan.name
@@ -1062,7 +1130,7 @@ def cmd_bust_resume(args) -> None:
 
 def cmd_crack_plan(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     job = require_job(conn, project, args.job)
     crackplan = resolve_crackplan(args.gameplan)
     print_crackplan_summary(project, job, crackplan, mode="Plan Preview", args=args)
@@ -1070,7 +1138,7 @@ def cmd_crack_plan(args) -> None:
 
 def cmd_crack_run(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     job = require_job(conn, project, args.job)
     crackplan = resolve_crackplan(args.gameplan)
     crackplan = maybe_warn_and_escalate_crack(conn, project, job, crackplan, args)
@@ -1147,7 +1215,7 @@ def open_html_report(output: Path) -> None:
 
 def cmd_report_html(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     output = write_html_report(conn, project, Path(args.output) if args.output else None)
     if args.open:
         open_html_report(output)
@@ -1155,7 +1223,7 @@ def cmd_report_html(args) -> None:
 
 def cmd_report_json(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
     output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.json"
     generate_json(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
@@ -1173,7 +1241,7 @@ CSV_DATASETS = {
 
 def cmd_report_csv(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     data = gather_report_data(conn, project)
     rows = CSV_DATASETS[args.kind](data)
     output = Path(args.output) if args.output else Path(project["root_dir"]) / f"report-{args.kind}.csv"
@@ -1186,7 +1254,7 @@ def cmd_report_csv(args) -> None:
 
 def cmd_report_markdown(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
     output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.md"
     generate_markdown(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
@@ -1196,7 +1264,7 @@ def cmd_report_markdown(args) -> None:
 
 def cmd_runs(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     runs = get_runs(conn, project["id"], args.status)
     section(f"Runs: {project['name']}", "cyan")
     if not runs:
@@ -1228,7 +1296,7 @@ TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack"}
 
 def cmd_history(args) -> None:
     conn = connect(DB_PATH)
-    project = require_project(conn, args.project)
+    project = resolve_project(conn, args)
     rows = get_history(conn, project["id"], tool=args.tool, status=args.status, limit=args.limit)
     section(f"History: {project['name']}", "cyan")
     if not rows:
@@ -1286,7 +1354,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     # Shared by every `bust`/`fuzz` run|resume|plan subcommand so `run` and `resume`
     # can never drift apart the way they did before (see git history).
     project_host_args = argparse.ArgumentParser(add_help=False)
-    project_host_args.add_argument("project", help="project name")
+    project_host_args.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     project_host_args.add_argument(
         "url", nargs="?",
         help="host URL or host name already added to the project (optional if the project has exactly one host)",
@@ -1366,7 +1434,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     fres.set_defaults(func=cmd_fuzz_resume)
 
     coverage = sub.add_parser("coverage", help="show operation coverage by host and tool")
-    coverage.add_argument("project")
+    coverage.add_argument("project", nargs="?")
     coverage.add_argument("url", nargs="?")
     coverage.set_defaults(func=cmd_coverage)
 
@@ -1393,6 +1461,25 @@ for detailed options and examples. Only test systems you are authorized to asses
         formatter_class=formatter,
     )
     ple.set_defaults(func=cmd_project_list)
+
+    puse = project_sub.add_parser(
+        "use",
+        help="set the active project (defaults future commands to it)",
+        description="Select the active project. Later commands default to it, so you "
+        "don't have to name it every time. Explicit names, --project, and "
+        "OBLIQUITY_PROJECT all override it.",
+        epilog="example:\n  obliquity project use acme",
+        formatter_class=formatter,
+    )
+    puse.add_argument("name", help="project to make active")
+    puse.set_defaults(func=cmd_project_use)
+
+    pcur = project_sub.add_parser("current", help="show the active project", formatter_class=formatter)
+    pcur.set_defaults(func=cmd_project_current)
+
+    puns = project_sub.add_parser("unset", help="clear the active project", formatter_class=formatter)
+    puns.set_defaults(func=cmd_project_unset)
+
     pc = project_sub.add_parser(
         "create",
         help="create a project",
@@ -1420,7 +1507,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "add", help="add a host", formatter_class=formatter,
         epilog="example:\n  obliquity host add acme https://app.acme.test --profile php --server apache --tech php",
     )
-    ha.add_argument("project", help="project name")
+    ha.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     ha.add_argument("url", help="target base URL, including scheme")
     ha.add_argument("--profile", default="generic", help="host profile (default: generic)")
     ha.add_argument("--server", help="known web server, such as apache or iis")
@@ -1429,14 +1516,14 @@ for detailed options and examples. Only test systems you are authorized to asses
     ha.set_defaults(func=cmd_host_add)
 
     hl = host_sub.add_parser("list", help="list project hosts", epilog="example:\n  obliquity host list acme", formatter_class=formatter)
-    hl.add_argument("project", help="project name")
+    hl.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     hl.set_defaults(func=cmd_host_list)
 
     hu = host_sub.add_parser(
         "update", help="update host metadata", formatter_class=formatter,
         epilog='example:\n  obliquity host update acme https://app.acme.test --tech php --notes "Public app"',
     )
-    hu.add_argument("project", help="project name")
+    hu.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     hu.add_argument("url", help="current host URL")
     hu.add_argument("--url-new", help="new URL for this host")
     hu.add_argument("--profile")
@@ -1446,7 +1533,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     hu.set_defaults(func=cmd_host_update)
 
     hr = host_sub.add_parser("remove", help="remove a host and its database records", formatter_class=formatter, epilog="example:\n  obliquity host remove acme https://app.acme.test")
-    hr.add_argument("project", help="project name")
+    hr.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     hr.add_argument("url", help="host URL")
     hr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
     hr.set_defaults(func=cmd_host_remove)
@@ -1495,7 +1582,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     bres.set_defaults(func=cmd_bust_resume)
 
     crack_target_args = argparse.ArgumentParser(add_help=False)
-    crack_target_args.add_argument("project", help="project name")
+    crack_target_args.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     crack_target_args.add_argument(
         "job", nargs="?",
         help="crack job name or hash file already added to the project (optional if the project has exactly one job)",
@@ -1525,7 +1612,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "add", help="add a hash file as a crack job", formatter_class=formatter,
         epilog="example:\n  obliquity crack job add acme ./hashes.txt --hash-type 1000 --name ntlm-dump",
     )
-    cja.add_argument("project", help="project name")
+    cja.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     cja.add_argument("hashfile", help="path to a hashcat-compatible hash file")
     cja.add_argument("--hash-type", type=int, required=True, help="hashcat -m mode number, e.g. 0=MD5, 1000=NTLM")
     cja.add_argument("--name", help="friendly name to refer to this job later")
@@ -1533,11 +1620,11 @@ for detailed options and examples. Only test systems you are authorized to asses
     cja.set_defaults(func=cmd_crack_job_add)
 
     cjl = crack_job_sub.add_parser("list", help="list project crack jobs", epilog="example:\n  obliquity crack job list acme", formatter_class=formatter)
-    cjl.add_argument("project", help="project name")
+    cjl.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     cjl.set_defaults(func=cmd_crack_job_list)
 
     cjr = crack_job_sub.add_parser("remove", help="remove a crack job and its records", formatter_class=formatter, epilog="example:\n  obliquity crack job remove acme ntlm-dump")
-    cjr.add_argument("project", help="project name")
+    cjr.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     cjr.add_argument("target", help="job name or hash file path")
     cjr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
     cjr.set_defaults(func=cmd_crack_job_remove)
@@ -1575,7 +1662,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "runs", help="show stored stage runs", formatter_class=formatter,
         epilog="examples:\n  obliquity runs acme\n  obliquity runs acme --status interrupted",
     )
-    runs.add_argument("project", help="project name")
+    runs.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     runs.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
     runs.set_defaults(func=cmd_runs)
 
@@ -1586,7 +1673,7 @@ for detailed options and examples. Only test systems you are authorized to asses
   obliquity history acme --tool hashcat
   obliquity history acme --status failed --limit 20""",
     )
-    history.add_argument("project", help="project name")
+    history.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     history.add_argument("--tool", choices=["feroxbuster", "ffuf", "hashcat"], help="filter by underlying tool")
     history.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
     history.add_argument("--limit", type=int, help="show only the N most recent entries")
@@ -1598,7 +1685,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "html", help="generate an HTML report", formatter_class=formatter,
         epilog="examples:\n  obliquity report html acme\n  obliquity report html acme --output ./acme-report.html",
     )
-    rh.add_argument("project", help="project name")
+    rh.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     rh.add_argument("--output", help="custom report path")
     rh.add_argument("--open", action="store_true", help="open the report in the default browser")
     rh.set_defaults(func=cmd_report_html)
@@ -1607,7 +1694,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "json", help="generate a JSON report (runs, findings, crack runs, cracked hashes)", formatter_class=formatter,
         epilog="examples:\n  obliquity report json acme\n  obliquity report json acme --output ./acme-report.json",
     )
-    rj.add_argument("project", help="project name")
+    rj.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     rj.add_argument("--output", help="custom report path")
     rj.set_defaults(func=cmd_report_json)
 
@@ -1615,7 +1702,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "csv", help="generate a CSV report for one dataset", formatter_class=formatter,
         epilog="examples:\n  obliquity report csv acme\n  obliquity report csv acme --kind cracked-hashes",
     )
-    rc.add_argument("project", help="project name")
+    rc.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     rc.add_argument("--kind", choices=sorted(CSV_DATASETS), default="findings", help="which dataset to export (default: findings)")
     rc.add_argument("--output", help="custom report path")
     rc.set_defaults(func=cmd_report_csv)
@@ -1624,7 +1711,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "markdown", help="generate a Markdown report", formatter_class=formatter,
         epilog="examples:\n  obliquity report markdown acme\n  obliquity report markdown acme --output ./acme-report.md",
     )
-    rm.add_argument("project", help="project name")
+    rm.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     rm.add_argument("--output", help="custom report path")
     rm.set_defaults(func=cmd_report_markdown)
 
