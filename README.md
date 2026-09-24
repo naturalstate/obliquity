@@ -24,21 +24,6 @@ project-aware, resumable, and reported in one place instead of three.
 
 ---
 
-<details>
-<summary><strong>Terminal banner</strong> (what you see when you run any command)</summary>
-
-```text
-      ___.   .__  .__             .__  __
-  ____\_ |__ |  | |__| ________ __|__|/  |_ ___.__.
- /  _ \| __ \|  | |  |/ ____/  |  \  \   __<   |  |
-(  <_> ) \_\ \  |_|  < <_|  |  |  /  ||  |  \___  |
- \____/|___  /____/__/\__   |____/|__||__|  / ____|
-           \/            |__|               \/
-```
-
-*(renders in a 7-color gradient in a real terminal)*
-
-</details>
 
 <div align="center">
 
