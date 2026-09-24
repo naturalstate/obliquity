@@ -303,7 +303,7 @@ Then just type `obliquity-env` in any new terminal before using the tool.
 ## Quickstart
 
 ```bash
-# 1. Create a project
+# 1. Create a project (and list all projects any time with `obliquity project list`)
 obliquity project create acme
 
 # 2. Add a host, with whatever metadata you already know

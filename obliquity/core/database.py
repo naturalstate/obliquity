@@ -137,6 +137,21 @@ def get_project(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM projects WHERE name = ?", (name,)).fetchone()
 
 
+def list_projects(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT p.*,
+                (SELECT COUNT(*) FROM hosts h WHERE h.project_id = p.id) AS host_count,
+                (SELECT COUNT(*) FROM crack_jobs j WHERE j.project_id = p.id) AS job_count,
+                (SELECT COUNT(*) FROM runs r WHERE r.project_id = p.id) AS run_count
+            FROM projects p
+            ORDER BY p.name
+            """
+        )
+    )
+
+
 def create_project(conn: sqlite3.Connection, name: str, root_dir: Path) -> sqlite3.Row:
     root_dir.mkdir(parents=True, exist_ok=True)
     conn.execute("INSERT INTO projects(name, root_dir) VALUES(?, ?)", (name, str(root_dir)))

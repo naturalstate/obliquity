@@ -562,6 +562,12 @@ entirely (nothing references it and it's dev-branch-only), and kept
 `hashcat-best64-rules` (pinned to the v6.2.6 tag) as the canonical rules
 download. No best66 references remain in shipped code.
 
+### 20. `obliquity project list`
+
+Added a `list_projects()` DB helper (name + host/crack-job/run counts +
+created date, sorted by name) and wired `obliquity project list` to it --
+`project` previously only had `create` and `archive`. Two tests.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

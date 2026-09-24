@@ -35,6 +35,7 @@ from obliquity.core.database import (
     add_host,
     connect,
     create_project,
+    list_projects,
     delete_crack_job,
     delete_host,
     delete_project,
@@ -494,6 +495,22 @@ def print_crack_event(event: dict) -> None:
         if event.get("error"):
             bullet("Error", event["error"], color=color)
         return
+
+
+def cmd_project_list(args) -> None:
+    conn = connect(DB_PATH)
+    projects = list_projects(conn)
+    section("Projects", "cyan")
+    if not projects:
+        print("No projects yet. Create one with: obliquity project create <name>")
+        return
+    for p in projects:
+        subsection(p["name"], "magenta")
+        bullet("Hosts", p["host_count"])
+        bullet("Crack jobs", p["job_count"])
+        bullet("Runs", p["run_count"])
+        bullet("Created", p["created_at"])
+        bullet("Root", p["root_dir"])
 
 
 def cmd_project_create(args) -> None:
@@ -1369,6 +1386,13 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     project = sub.add_parser("project", help="create and manage Obliquity projects")
     project_sub = project.add_subparsers(dest="project_cmd", required=True)
+    ple = project_sub.add_parser(
+        "list",
+        help="list all projects with host/job/run counts",
+        epilog="example:\n  obliquity project list",
+        formatter_class=formatter,
+    )
+    ple.set_defaults(func=cmd_project_list)
     pc = project_sub.add_parser(
         "create",
         help="create a project",
