@@ -1,0 +1,13 @@
+{
+  "name": "quick",
+  "description": "Fast first pass: a short username shortlist against the top-100 passwords, conservative parallelism, stop on the first valid pair.",
+  "stages": [
+    {
+      "name": "shortlist-top100",
+      "userlist": "/usr/share/seclists/Usernames/top-usernames-shortlist.txt",
+      "passlist": "/usr/share/seclists/Passwords/Common-Credentials/10-million-password-list-top-100.txt",
+      "tasks": 4,
+      "stop_on_first_valid": true
+    }
+  ]
+}

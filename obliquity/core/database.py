@@ -112,6 +112,61 @@ CREATE TABLE IF NOT EXISTS cracked_hashes (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY(job_id) REFERENCES crack_jobs(id) ON DELETE CASCADE
 );
+
+-- thc-hydra pillar: online login attacks. A login job is host/service-scoped
+-- (unlike offline crack jobs), so it optionally links to a host.
+CREATE TABLE IF NOT EXISTS login_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    host_id INTEGER,
+    name TEXT,
+    service TEXT NOT NULL,
+    target TEXT NOT NULL,
+    port INTEGER,
+    form_spec TEXT,
+    module_args TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, name),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    loginplan_name TEXT NOT NULL,
+    stage_name TEXT NOT NULL,
+    fingerprint TEXT NOT NULL UNIQUE,
+    command TEXT NOT NULL,
+    raw_output_path TEXT,
+    result_output_path TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at TEXT,
+    finished_at TEXT,
+    exit_code INTEGER,
+    error TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(job_id) REFERENCES login_jobs(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS found_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    project_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    service TEXT,
+    target TEXT,
+    username TEXT,
+    password TEXT,
+    source TEXT,
+    found_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, job_id, username, password),
+    FOREIGN KEY(run_id) REFERENCES login_runs(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(job_id) REFERENCES login_jobs(id) ON DELETE CASCADE
+);
 """
 
 
@@ -561,6 +616,162 @@ def sum_cracked_for_runs(conn: sqlite3.Connection, run_ids: list[int]) -> int:
     return conn.execute(f"SELECT COUNT(*) FROM cracked_hashes WHERE run_id IN ({placeholders})", run_ids).fetchone()[0]
 
 
+# --- thc-hydra pillar: login jobs, runs, and found credentials ---------------
+
+def add_login_job(
+    conn: sqlite3.Connection,
+    project_id: int,
+    *,
+    service: str,
+    target: str,
+    name: str | None = None,
+    host_id: int | None = None,
+    port: int | None = None,
+    form_spec: str | None = None,
+    module_args: str | None = None,
+    notes: str | None = None,
+) -> sqlite3.Row:
+    conn.execute(
+        """
+        INSERT INTO login_jobs(project_id, host_id, name, service, target, port, form_spec, module_args, notes)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (project_id, host_id, name, service, target, port, form_spec, module_args, notes),
+    )
+    conn.commit()
+    job = conn.execute(
+        "SELECT * FROM login_jobs WHERE project_id = ? ORDER BY id DESC LIMIT 1", (project_id,)
+    ).fetchone()
+    if job is None:
+        raise RuntimeError("Login job creation failed")
+    return job
+
+
+def list_login_jobs(conn: sqlite3.Connection, project_id: int) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT * FROM login_jobs WHERE project_id = ? ORDER BY id", (project_id,)))
+
+
+def get_login_job(conn: sqlite3.Connection, project_id: int, target: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM login_jobs WHERE project_id = ? AND (name = ? OR target = ?)",
+        (project_id, target, target),
+    ).fetchone()
+
+
+def delete_login_job(conn: sqlite3.Connection, project_id: int, target: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM login_jobs WHERE project_id = ? AND (name = ? OR target = ?)",
+        (project_id, target, target),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_login_run_by_fingerprint(conn: sqlite3.Connection, fingerprint: str) -> Optional[sqlite3.Row]:
+    return conn.execute("SELECT * FROM login_runs WHERE fingerprint = ?", (fingerprint,)).fetchone()
+
+
+def create_or_update_login_run(
+    conn: sqlite3.Connection,
+    project_id: int,
+    job_id: int,
+    loginplan_name: str,
+    stage_name: str,
+    fingerprint: str,
+    command: str,
+    raw_output_path: str,
+    result_output_path: str,
+    status: str = "pending",
+) -> sqlite3.Row:
+    conn.execute(
+        """
+        INSERT INTO login_runs(project_id, job_id, loginplan_name, stage_name, fingerprint, command,
+                               raw_output_path, result_output_path, status)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(fingerprint) DO UPDATE SET
+            command=excluded.command,
+            raw_output_path=excluded.raw_output_path,
+            result_output_path=excluded.result_output_path
+        """,
+        (
+            project_id, job_id, loginplan_name, stage_name, fingerprint, command,
+            raw_output_path, result_output_path, status,
+        ),
+    )
+    conn.commit()
+    run = get_login_run_by_fingerprint(conn, fingerprint)
+    if run is None:
+        raise RuntimeError("Login run creation failed")
+    return run
+
+
+def mark_login_run_started(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE login_runs
+        SET status = 'running', started_at = CURRENT_TIMESTAMP,
+            finished_at = NULL, exit_code = NULL, error = NULL
+        WHERE id = ?
+        """,
+        (run_id,),
+    )
+    conn.commit()
+
+
+def mark_login_run_finished(conn: sqlite3.Connection, run_id: int, exit_code: int, status: str, error: str | None = None) -> None:
+    conn.execute(
+        "UPDATE login_runs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = ?, error = ? WHERE id = ?",
+        (status, exit_code, error, run_id),
+    )
+    conn.commit()
+
+
+def insert_found_credentials(conn: sqlite3.Connection, results: Iterable[dict]) -> int:
+    count = 0
+    for item in results:
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO found_credentials(run_id, project_id, job_id, service, target, username, password, source)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.get("run_id"),
+                item.get("project_id"),
+                item.get("job_id"),
+                item.get("service"),
+                item.get("target"),
+                item.get("username"),
+                item.get("password"),
+                item.get("source"),
+            ),
+        )
+        count += cur.rowcount
+    conn.commit()
+    return count
+
+
+def get_found_credentials(conn: sqlite3.Connection, project_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT fc.*, j.name AS job_name, r.stage_name, r.loginplan_name
+            FROM found_credentials fc
+            JOIN login_jobs j ON j.id = fc.job_id
+            JOIN login_runs r ON r.id = fc.run_id
+            WHERE fc.project_id = ?
+            ORDER BY fc.target, fc.username
+            """,
+            (project_id,),
+        )
+    )
+
+
+def get_login_runs(conn: sqlite3.Connection, project_id: int, status: str | None = None) -> list[sqlite3.Row]:
+    if status:
+        return list(conn.execute("SELECT * FROM login_runs WHERE project_id = ? AND status = ? ORDER BY id", (project_id, status)))
+    return list(conn.execute("SELECT * FROM login_runs WHERE project_id = ? ORDER BY id", (project_id,)))
+
+
 def get_history(
     conn: sqlite3.Connection,
     project_id: int,
@@ -587,8 +798,15 @@ def get_history(
         FROM crack_runs cr
         JOIN crack_jobs j ON j.id = cr.job_id
         WHERE cr.project_id = ?
+        UNION ALL
+        SELECT lr.id AS run_id, 'hydra' AS tool, lr.loginplan_name AS gameplan_name, lr.stage_name, lr.status, lr.exit_code,
+               lr.started_at, lr.finished_at, COALESCE(lj.name, lj.target) AS target,
+               (SELECT COUNT(*) FROM found_credentials fc WHERE fc.run_id = lr.id) AS finding_count
+        FROM login_runs lr
+        JOIN login_jobs lj ON lj.id = lr.job_id
+        WHERE lr.project_id = ?
     """
-    params: list[object] = [project_id, project_id]
+    params: list[object] = [project_id, project_id, project_id]
     if tool:
         sql = f"SELECT * FROM ({sql}) WHERE tool = ?"
         params.append(tool)

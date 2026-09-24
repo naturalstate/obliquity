@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-103%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -54,6 +54,7 @@ project-aware, resumable, and reported in one place instead of three.
   - [`bust`: content discovery](#bust-content-discovery)
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
   - [`crack`: hash cracking](#crack-hash-cracking)
+  - [`hydra`: online login attacks](#hydra-online-login-attacks)
   - [Wordlist setup](#wordlist-setup)
   - [Reports](#reports)
   - [Resume & scan history](#resume--scan-history)
@@ -70,13 +71,14 @@ project-aware, resumable, and reported in one place instead of three.
 ## What is Obliquity?
 
 Obliquity is a CLI for staged penetration-testing tool orchestration, built
-around three pillars, each wrapping one underlying tool:
+around four pillars, each wrapping one underlying tool:
 
 | Pillar | Tool | Job |
 |---|---|---|
 | **`bust`** | [`feroxbuster`](https://github.com/epi052/feroxbuster) | Staged directory/file content discovery |
 | **`fuzz`** | [`ffuf`](https://github.com/ffuf/ffuf) | Parameter, endpoint, and raw-request fuzzing |
-| **`crack`** | [`hashcat`](https://hashcat.net/hashcat/) | Staged password/hash cracking |
+| **`crack`** | [`hashcat`](https://hashcat.net/hashcat/) | Staged **offline** password/hash cracking |
+| **`hydra`** | [`thc-hydra`](https://github.com/vanhauser-thc/thc-hydra) | Staged **online** login/credential attacks |
 
 It is **not** a replacement for any of those tools -- it's a thin, honest
 wrapper that adds the project management layer they don't try to be:
@@ -136,8 +138,9 @@ so the busywork disappears and you just read results.
 ## Requirements
 
 - Python 3.10+
-- `feroxbuster`, `ffuf`, and `hashcat` installed and available on `PATH`
-  (`obliquity doctor` checks all three for you)
+- `feroxbuster`, `ffuf`, `hashcat`, and `hydra` installed and available on
+  `PATH` (`obliquity doctor` checks them for you; each pillar only needs its
+  own tool, so a missing one just disables that pillar)
 - SecLists content for the default profiles -- or just let Obliquity
   download the handful of files it actually needs, see
   [Wordlist setup](#wordlist-setup)
@@ -487,11 +490,49 @@ wordlists glued together), and the two hybrids `hybrid-wordlist-mask`
 > from hashcat's own `.restore` checkpoint (mid-keyspace), not just from the
 > last completed stage.
 
+### `hydra`: online login attacks
+
+`hydra` (thc-hydra) is the one **online** pillar: unlike `crack` (offline
+hashing, no host), it makes live login attempts against a service -- web
+login forms, SSH, FTP, SMB, RDP, and more -- so it fits the project/host
+model directly. A login job is service + target (optionally linked to a
+project host); a loginplan stages credential lists the same way the others
+stage wordlists.
+
+```bash
+# Add a login target as a job (the role a host URL plays for bust/fuzz)
+obliquity hydra job add acme 10.0.0.5 --service ssh --name ssh-box --port 22
+
+# Web login forms need hydra's form spec (path : body-with-^USER^/^PASS^ : failure-text)
+obliquity hydra job add acme app.acme.test --service http-post-form --name web-login \
+  --form-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
+
+obliquity hydra job list acme
+
+# Preview, dry-run, execute -- job name optional with exactly one job
+obliquity hydra plan acme --gameplan quick
+obliquity hydra run ssh-box --gameplan common-creds --dry-run
+obliquity hydra run ssh-box --gameplan common-creds
+
+# Review what was recovered
+obliquity hydra creds acme
+```
+
+> **Authorization required.** hydra performs live credential guessing. Only
+> run it against systems you're explicitly authorized to test. Online
+> guessing can trigger account lockouts, rate limits, and alerts -- keep
+> `-t` (tasks) low and prefer small, targeted credential lists. Obliquity
+> prints this reminder on every plan/run and defaults the built-in plans to
+> conservative parallelism.
+>
+> `hydra resume` is **stage-level** (it skips already-completed stages), not
+> mid-attack resume within a single hydra pass.
+
 ```bash
 obliquity doctor
 ```
 
-`doctor` checks `feroxbuster`, `ffuf`, and `hashcat` (core), plus
+`doctor` checks `feroxbuster`, `ffuf`, `hashcat`, and `hydra` (core), plus
 `gobuster`/`wfuzz`/`john` (optional, for future alternate-tool support --
 see [Roadmap](#roadmap--future-features)).
 

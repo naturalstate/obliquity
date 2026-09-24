@@ -34,12 +34,14 @@ from obliquity.core.crackplan import (
 from obliquity.core.database import (
     add_crack_job,
     add_host,
+    add_login_job,
     connect,
     create_project,
     list_projects,
     set_project_default_gameplan,
     delete_crack_job,
     delete_host,
+    delete_login_job,
     delete_project,
     get_coverage,
     get_crack_job,
@@ -47,18 +49,29 @@ from obliquity.core.database import (
     get_crack_runs,
     get_cracked_hashes,
     get_findings,
+    get_found_credentials,
     get_history,
     get_host,
+    get_login_job,
+    get_login_run_by_fingerprint,
     get_project,
     get_run_by_fingerprint,
     get_runs,
     list_crack_jobs,
     list_hosts,
+    list_login_jobs,
     sum_cracked_for_runs,
     sum_findings_for_runs,
     update_host,
 )
 from obliquity.core.extensions import analyze_wordlist
+from obliquity.core.login_runner import preview_plan as preview_loginplan, run_loginplan
+from obliquity.core.loginplan import (
+    find_builtin_loginplan,
+    list_builtin_loginplans,
+    load_loginplan,
+)
+from obliquity.adapters.hydra import FORM_SERVICES, KNOWN_SERVICES
 from obliquity.core.gameplan import extension_conflicts, find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
@@ -118,6 +131,13 @@ def resolve_crackplan(name_or_path: str):
     if path.exists():
         return load_crackplan(path)
     return load_crackplan(find_builtin_crackplan(name_or_path))
+
+
+def resolve_loginplan(name_or_path: str):
+    path = Path(name_or_path)
+    if path.exists():
+        return load_loginplan(path)
+    return load_loginplan(find_builtin_loginplan(name_or_path))
 
 
 def require_project(conn, name: str):
@@ -188,6 +208,22 @@ def require_job(conn, project: dict, target: str | None):
     if len(jobs) > 1:
         options = ", ".join(j["name"] or j["hash_file"] for j in jobs)
         die(f"project '{project['name']}' has multiple crack jobs; specify one: {options}")
+    return jobs[0]
+
+
+def require_login_job(conn, project: dict, target: str | None):
+    if target:
+        job = get_login_job(conn, project["id"], target)
+        if job is None:
+            die(f"login job not found in project: {target}. Add it first with: obliquity hydra job add {project['name']} <target> --service <svc>")
+        return job
+
+    jobs = list_login_jobs(conn, project["id"])
+    if not jobs:
+        die(f"project '{project['name']}' has no login jobs yet. Add one with: obliquity hydra job add {project['name']} <target> --service <svc>")
+    if len(jobs) > 1:
+        options = ", ".join(j["name"] or j["target"] for j in jobs)
+        die(f"project '{project['name']}' has multiple login jobs; specify one: {options}")
     return jobs[0]
 
 
@@ -930,6 +966,22 @@ def cmd_gameplans_list(args) -> None:
                         print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
                 blank()
 
+    if tool in (None, "hydra"):
+        section("Hydra login gameplans", "cyan")
+        for path in list_builtin_loginplans():
+            plan = load_loginplan(path)
+            subsection(plan.name, "magenta")
+            if plan.description:
+                bullet("Description", plan.description)
+            bullet("Stages", len(plan.stages))
+            bullet("Tool", "hydra")
+            if not args.brief:
+                for row in preview_loginplan(plan):
+                    print(f"  {c(str(row['number']) + '. ' + row['name'], 'yellow', bold=True)}")
+                    print(f"     {c('Usernames:', 'cyan', bold=True)} {row.get('username') or row.get('userlist')}")
+                    print(f"     {c('Passwords:', 'cyan', bold=True)} {row.get('password') or row.get('passlist')}")
+                blank()
+
 
 def cmd_doctor(args) -> None:
     statuses = inventory_tools()
@@ -1377,6 +1429,262 @@ def cmd_crack_resume(args) -> None:
     cmd_crack_run(args)
 
 
+# --- thc-hydra pillar: online login attacks ---------------------------------
+
+def _default_port_for_url(url: str) -> str:
+    # crude host extraction from a stored host URL, for seeding a login job
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    return parsed.hostname or url
+
+
+def normalize_login_job_target(conn, args) -> None:
+    """`hydra job add` takes an optional `project` then an optional `target`.
+    If the user gives a single positional that isn't the name of an existing
+    project (while an active project is set), they meant it as the target --
+    shuffle it so the project resolves from the active/env setting."""
+    proj = getattr(args, "project", None)
+    if proj and not getattr(args, "target", None) and get_project(conn, proj) is None:
+        args.target = proj
+        args.project = None
+
+
+def cmd_hydra_job_add(args) -> None:
+    conn = connect(DB_PATH)
+    normalize_login_job_target(conn, args)
+    project = resolve_project(conn, args)
+    if args.service not in KNOWN_SERVICES:
+        die(f"unknown service '{args.service}'. Known services: {', '.join(sorted(KNOWN_SERVICES))}")
+    if args.service in FORM_SERVICES and not args.form_spec:
+        die(f"service '{args.service}' requires --form-spec, e.g. "
+            "--form-spec \"/login:user=^USER^&pass=^PASS^:F=invalid\"")
+
+    # Optionally link to an existing host (for reporting) and seed the target
+    # from it when the user gave a host instead of a raw target.
+    host_id = None
+    target = args.target
+    if args.host:
+        host = get_host(conn, project["id"], args.host)
+        if host is None:
+            die(f"host not found in project: {args.host}. Add it with: obliquity host add {project['name']} {args.host}")
+        host_id = host["id"]
+        if not target:
+            target = _default_port_for_url(host["url"])
+    if not target:
+        die("provide a target (hostname/IP), or --host <url> to seed it from a project host")
+
+    job = add_login_job(
+        conn, project["id"], service=args.service, target=target, name=args.name,
+        host_id=host_id, port=args.port, form_spec=args.form_spec,
+        module_args=args.module_args, notes=args.notes,
+    )
+    section("Login job added", "green")
+    kv("Project", project["name"])
+    kv("Job", job["name"] or "-")
+    kv("Service", job["service"])
+    kv("Target", job["target"])
+    if job["port"]:
+        kv("Port", job["port"])
+    if job["form_spec"]:
+        kv("Form spec", job["form_spec"])
+
+
+def cmd_hydra_job_list(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    jobs = list_login_jobs(conn, project["id"])
+    section(f"Login jobs: {project['name']}", "cyan")
+    if not jobs:
+        print("No login jobs added yet.")
+        return
+    for job in jobs:
+        subsection(job["name"] or job["target"], "magenta")
+        bullet("Service", job["service"])
+        bullet("Target", job["target"] + (f":{job['port']}" if job["port"] else ""))
+        if job["form_spec"]:
+            bullet("Form spec", job["form_spec"])
+        if job["module_args"]:
+            bullet("Module args", job["module_args"])
+        if job["notes"]:
+            bullet("Notes", job["notes"])
+
+
+def cmd_hydra_job_remove(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    if not args.yes:
+        section("Confirm login job removal", "yellow")
+        kv("Project", project["name"], color="yellow")
+        kv("Target", args.target, color="yellow")
+        print(c("This will remove the login job and related run/credential records from the database.", "yellow"))
+        print(c("Re-run with --yes to confirm.", "yellow", bold=True))
+        return
+    removed = delete_login_job(conn, project["id"], args.target)
+    if not removed:
+        die(f"login job not found in project: {args.target}")
+    section("Login job removed", "green")
+    kv("Project", project["name"])
+    kv("Target", args.target)
+
+
+def _login_stage_detail(row: dict) -> str:
+    user = row.get("username") or (Path(row["userlist"]).name if row.get("userlist") else "?")
+    pw = row.get("password") or (Path(row["passlist"]).name if row.get("passlist") else "?")
+    return f"{user} x {pw}"
+
+
+def print_login_stage_summary(row: dict) -> None:
+    subsection(f"Stage {row['number']}: {row['name']}", "magenta")
+    bullet("Usernames", row.get("username") or row.get("userlist") or "?")
+    bullet("Passwords", row.get("password") or row.get("passlist") or "?")
+    if row.get("tasks"):
+        bullet("Tasks (-t)", row["tasks"])
+    bullet("Stop on first valid", "yes" if row.get("stop_on_first_valid") else "no")
+
+
+def print_loginplan_summary(project: dict, job: dict, plan, *, mode: str, args) -> None:
+    section(f"Obliquity Hydra: {mode}", "cyan")
+    kv("Project", project["name"])
+    kv("Job", job["name"] or job["target"])
+    kv("Service", job["service"])
+    kv("Target", job["target"] + (f":{job['port']}" if job["port"] else ""))
+    if job["form_spec"]:
+        kv("Form spec", job["form_spec"])
+    kv("Selected loginplan", plan.name)
+    if plan.description:
+        kv("Description", plan.description)
+    kv("Stages", len(plan.stages))
+    kv("Output root", Path(project["root_dir"]) / "runs" / "hydra")
+
+    option_bits = []
+    if getattr(args, "force", False):
+        option_bits.append("force-rerun=true")
+    kv("Run options", ", ".join(option_bits) if option_bits else "default")
+
+    # Online password attacks are noisy and can lock accounts -- say so plainly.
+    section("Authorization & safety", "yellow")
+    print(c("hydra performs LIVE online login attempts against the target. Only run this "
+            "against systems you are explicitly authorized to test. Online guessing can "
+            "trigger account lockouts, rate limits, and alerts -- keep -t (tasks) low and "
+            "prefer small, targeted credential lists.", "yellow"))
+
+    if mode == "Plan Preview":
+        section("Stages queued", "blue")
+        for row in preview_loginplan(plan):
+            print_login_stage_summary(row)
+
+
+def print_login_event(event: dict) -> None:
+    action = event.get("action")
+    n = _stage_n(event)
+
+    if action == "skipped":
+        print(c(f"  - {n}  skipped ({event.get('reason', 'already completed')})", "yellow"))
+        return
+
+    if action == "planned":
+        subsection(f"Planned {n}", "magenta")
+        bullet("Usernames", event.get("username") or event.get("userlist"))
+        bullet("Passwords", event.get("password") or event.get("passlist"))
+        command_block(event.get("command", ""))
+        return
+
+    if action == "starting":
+        line = c(f"  > {n}", "green", bold=True) + c(f"   {_login_stage_detail(event)}", "cyan")
+        print(line)
+        return
+
+    if action == "progress":
+        if supports_color():
+            print(f"\r{live_progress_line(event)}", end="", flush=True)
+        return
+
+    if action == "ran":
+        _clear_progress_line()
+        status = event.get("status", "unknown")
+        mark = {"completed": "OK", "interrupted": "INT"}.get(status, "FAIL")
+        color = {"completed": "green", "interrupted": "yellow"}.get(status, "red")
+        line = c(f"  {mark} {n}", color, bold=True) + c(f"   {event.get('new_findings')} creds found", color)
+        if event.get("error"):
+            line += c(f"   {event['error']}", color)
+        print(line)
+        return
+
+
+def normalize_login_run_target(conn, args) -> None:
+    """`hydra plan/run` take an optional `project` then an optional `job`. If the
+    single positional given isn't an existing project (with an active project
+    set), treat it as the job name against the active project."""
+    proj = getattr(args, "project", None)
+    if proj and not getattr(args, "job", None) and get_project(conn, proj) is None:
+        args.job = proj
+        args.project = None
+
+
+def cmd_hydra_plan(args) -> None:
+    conn = connect(DB_PATH)
+    normalize_login_run_target(conn, args)
+    project = resolve_project(conn, args)
+    job = require_login_job(conn, project, args.job)
+    plan = resolve_loginplan(args.gameplan or "quick")
+    print_loginplan_summary(project, job, plan, mode="Plan Preview", args=args)
+
+
+def cmd_hydra_run(args) -> None:
+    conn = connect(DB_PATH)
+    normalize_login_run_target(conn, args)
+    project = resolve_project(conn, args)
+    job = require_login_job(conn, project, args.job)
+    plan = resolve_loginplan(args.gameplan or "quick")
+
+    mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
+    print_loginplan_summary(project, job, plan, mode=mode, args=args)
+
+    section("Execution", "cyan")
+    results = run_loginplan(
+        conn, project, job, plan,
+        force=args.force, dry_run=args.dry_run, event_callback=print_login_event,
+    )
+
+    completed = sum(1 for item in results if item.get("status") == "completed")
+    skipped = sum(1 for item in results if item.get("action") == "skipped")
+    planned = sum(1 for item in results if item.get("action") == "planned")
+    failed = sum(1 for item in results if item.get("status") == "failed")
+    interrupted = sum(1 for item in results if item.get("status") == "interrupted")
+    found = sum(int(item.get("new_findings") or 0) for item in results)
+
+    summary_color = "red" if failed else "yellow" if interrupted else "green"
+    section("Run summary", summary_color)
+    kv("Completed stages", completed, color="green")
+    kv("Skipped stages", skipped, color="yellow")
+    kv("Planned stages", planned, color="magenta")
+    kv("Failed stages", failed, color="red" if failed else "green")
+    kv("Interrupted stages", interrupted, color="yellow" if interrupted else "green")
+    kv("Credentials found", found)
+    if found:
+        kv("View", f"obliquity hydra creds {project['name']}")
+
+
+def cmd_hydra_resume(args) -> None:
+    args.resume = True
+    cmd_hydra_run(args)
+
+
+def cmd_hydra_creds(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    creds = get_found_credentials(conn, project["id"])
+    section(f"Found credentials: {project['name']}", "cyan")
+    if not creds:
+        print("No credentials found yet.")
+        return
+    for row in creds:
+        subsection(f"{row['username']} : {row['password']}", "green")
+        bullet("Service", row["service"])
+        bullet("Target", row["target"])
+        bullet("Found via", f"{row['loginplan_name']} / {row['stage_name']}")
+
+
 def gather_report_data(conn, project):
     return (
         get_runs(conn, project["id"]),
@@ -1481,7 +1789,7 @@ def format_duration(started_at, finished_at) -> str:
     return elapsed_time((end - start).total_seconds())
 
 
-TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack"}
+TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack", "hydra": "hydra"}
 
 
 def cmd_history(args) -> None:
@@ -1646,7 +1954,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list crack\n  obliquity gameplans list bust --brief",
         formatter_class=formatter,
     )
-    gl.add_argument("tool", nargs="?", choices=["bust", "fuzz", "crack"], help="show only this tool's gameplans (default: all)")
+    gl.add_argument("tool", nargs="?", choices=["bust", "fuzz", "crack", "hydra"], help="show only this tool's gameplans (default: all)")
     gl.add_argument("--brief", action="store_true", help="show only names and summary fields")
     gl.set_defaults(func=cmd_gameplans_list)
 
@@ -1888,6 +2196,93 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
     cres.set_defaults(force=False)
     cres.set_defaults(func=cmd_crack_resume)
+
+    # --- hydra (online login attacks) ---
+    login_target_args = argparse.ArgumentParser(add_help=False)
+    login_target_args.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    login_target_args.add_argument(
+        "job", nargs="?",
+        help="login job name or target already added to the project (optional if the project has exactly one job)",
+    )
+
+    login_scan_args = argparse.ArgumentParser(add_help=False)
+    login_scan_args.add_argument("--gameplan", default=None, help="built-in loginplan name or JSON path (default: quick)")
+    login_scan_args.add_argument("--dry-run", action="store_true", help="print the hydra command without running it")
+
+    hydra = sub.add_parser(
+        "hydra", help="plan, run, or resume online login attacks (thc-hydra)", formatter_class=formatter,
+        epilog="""examples:
+  obliquity hydra job add acme 10.0.0.5 --service ssh --name ssh-box
+  obliquity hydra job add acme app.acme.test --service http-post-form --form-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
+  obliquity hydra plan acme --gameplan quick
+  obliquity hydra run acme ssh-box --gameplan common-creds
+  obliquity hydra creds acme""",
+    )
+    hydra_sub = hydra.add_subparsers(dest="hydra_cmd", required=True)
+
+    hydra_job = hydra_sub.add_parser("job", help="add, list, or remove login targets (service + host)")
+    hydra_job_sub = hydra_job.add_subparsers(dest="hydra_job_cmd", required=True)
+
+    hja = hydra_job_sub.add_parser(
+        "add", help="add a login target as a job", formatter_class=formatter,
+        epilog="examples:\n"
+        "  obliquity hydra job add acme 10.0.0.5 --service ssh\n"
+        "  obliquity hydra job add acme app.acme.test --service http-post-form --form-spec \"/login:user=^USER^&pass=^PASS^:F=invalid\"",
+    )
+    hja.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    hja.add_argument("target", nargs="?", help="hostname or IP to attack (optional if --host is given)")
+    hja.add_argument("--service", required=True, help=f"service to attack; one of: {', '.join(sorted(KNOWN_SERVICES))}")
+    hja.add_argument("--host", help="link to an existing project host URL (seeds the target if omitted)")
+    hja.add_argument("--port", type=int, help="custom port (hydra -s)")
+    hja.add_argument("--form-spec", dest="form_spec", help="http-*-form module string: \"path:body-with-^USER^-^PASS^:F=failure-text\"")
+    hja.add_argument("--module-args", dest="module_args", help="extra hydra module argument for non-form services")
+    hja.add_argument("--name", help="friendly name to refer to this job later")
+    hja.add_argument("--notes", help="free-form job notes")
+    hja.set_defaults(func=cmd_hydra_job_add)
+
+    hjl = hydra_job_sub.add_parser("list", help="list project login jobs", epilog="example:\n  obliquity hydra job list acme", formatter_class=formatter)
+    hjl.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    hjl.set_defaults(func=cmd_hydra_job_list)
+
+    hjr = hydra_job_sub.add_parser("remove", help="remove a login job and its records", formatter_class=formatter, epilog="example:\n  obliquity hydra job remove acme ssh-box")
+    hjr.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    hjr.add_argument("target", help="job name or target")
+    hjr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
+    hjr.set_defaults(func=cmd_hydra_job_remove)
+
+    hp = hydra_sub.add_parser(
+        "plan", help="preview stages without creating runs", formatter_class=formatter,
+        parents=[login_target_args],
+        epilog="example:\n  obliquity hydra plan acme --gameplan quick",
+    )
+    hp.add_argument("--gameplan", default=None, help="built-in loginplan name or JSON path (default: quick)")
+    hp.set_defaults(func=cmd_hydra_plan)
+
+    hr = hydra_sub.add_parser(
+        "run", help="execute a staged hydra login attack", formatter_class=formatter,
+        parents=[login_target_args, login_scan_args],
+        epilog="""examples:
+  obliquity hydra run acme --gameplan quick
+  obliquity hydra run acme ssh-box --gameplan common-creds
+  obliquity hydra run acme --dry-run""",
+    )
+    hr.add_argument("--force", action="store_true", help="rerun completed stages")
+    hr.set_defaults(func=cmd_hydra_run)
+
+    hres = hydra_sub.add_parser(
+        "resume", help="skip completed stages and retry interrupted or failed work",
+        description="Resume a loginplan using stored stage fingerprints. Completed stages are skipped. "
+        "Note: this is stage-level resume, not mid-attack resume within a single hydra pass.",
+        formatter_class=formatter,
+        parents=[login_target_args, login_scan_args],
+        epilog="example:\n  obliquity hydra resume acme --gameplan common-creds",
+    )
+    hres.set_defaults(force=False)
+    hres.set_defaults(func=cmd_hydra_resume)
+
+    hcreds = hydra_sub.add_parser("creds", help="list credentials found for a project", formatter_class=formatter, epilog="example:\n  obliquity hydra creds acme")
+    hcreds.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    hcreds.set_defaults(func=cmd_hydra_creds)
 
     runs = sub.add_parser(
         "runs", help="show stored stage runs", formatter_class=formatter,

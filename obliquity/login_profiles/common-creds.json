@@ -1,0 +1,20 @@
+{
+  "name": "common-creds",
+  "description": "Two-stage escalation: default/known usernames against the top-100 passwords, then the same usernames against the top-1000. Stops as soon as a valid pair is found.",
+  "stages": [
+    {
+      "name": "shortlist-top100",
+      "userlist": "/usr/share/seclists/Usernames/top-usernames-shortlist.txt",
+      "passlist": "/usr/share/seclists/Passwords/Common-Credentials/10-million-password-list-top-100.txt",
+      "tasks": 4,
+      "stop_on_first_valid": true
+    },
+    {
+      "name": "shortlist-top1000",
+      "userlist": "/usr/share/seclists/Usernames/top-usernames-shortlist.txt",
+      "passlist": "/usr/share/seclists/Passwords/Common-Credentials/10-million-password-list-top-1000.txt",
+      "tasks": 4,
+      "stop_on_first_valid": true
+    }
+  ]
+}

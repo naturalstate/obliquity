@@ -18,13 +18,16 @@ class ToolStatus:
         return self.path is not None
 
 
-CORE_TOOLS = ("feroxbuster", "ffuf", "hashcat")
+CORE_TOOLS = ("feroxbuster", "ffuf", "hashcat", "hydra")
 OPTIONAL_TOOLS = ("gobuster", "wfuzz", "john")
 
 VERSION_ARGS = {
     "feroxbuster": ["--version"],
     "ffuf": ["-V"],
     "hashcat": ["--version"],
+    # hydra has no --version flag; a bare invocation prints "Hydra v9.x ..."
+    # as its first usage line.
+    "hydra": [],
     "gobuster": ["version"],
     "wfuzz": ["--version"],
     "john": ["--list=build-info"],

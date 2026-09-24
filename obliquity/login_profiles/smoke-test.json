@@ -1,0 +1,13 @@
+{
+  "name": "smoke-test",
+  "description": "Tiny inline single-pair check for wiring/dry-run verification (admin/admin).",
+  "stages": [
+    {
+      "name": "single-pair",
+      "username": "admin",
+      "password": "admin",
+      "tasks": 1,
+      "stop_on_first_valid": true
+    }
+  ]
+}
