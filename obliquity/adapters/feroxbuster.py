@@ -60,6 +60,18 @@ def build_command(
     if stage.status_codes:
         cmd += ["--status-codes", ",".join(str(x) for x in stage.status_codes)]
 
+    # Response filters: drop noise by status/size/words/lines/regex.
+    if stage.filter_status:
+        cmd += ["--filter-status", ",".join(str(x) for x in stage.filter_status)]
+    if stage.filter_size:
+        cmd += ["--filter-size", ",".join(str(x) for x in stage.filter_size)]
+    if stage.filter_words:
+        cmd += ["--filter-words", ",".join(str(x) for x in stage.filter_words)]
+    if stage.filter_lines:
+        cmd += ["--filter-lines", ",".join(str(x) for x in stage.filter_lines)]
+    if stage.filter_regex:
+        cmd += ["--filter-regex", stage.filter_regex]
+
     if rate_limit:
         cmd += ["--rate-limit", str(rate_limit)]
 

@@ -47,6 +47,38 @@ class BuildCommandTests(TestCase):
         self.assertIn("--no-recursion", command)
         self.assertNotIn("--recursive", command)
 
+    def test_collect_extensions_flag_emitted(self) -> None:
+        stage = Stage(name="t", wordlist="w.txt", collect_extensions=True)
+        command = build_command("https://example.com", stage, Path("r.json"))
+        self.assertIn("--collect-extensions", command)
+
+    def test_response_filters_emitted(self) -> None:
+        stage = Stage(
+            name="t", wordlist="w.txt",
+            filter_status=[404, 500], filter_size=[0, 1024],
+            filter_words=[10], filter_lines=[3], filter_regex="Not Found",
+        )
+        command = build_command("https://example.com", stage, Path("r.json"))
+        self.assertEqual(command[command.index("--filter-status") + 1], "404,500")
+        self.assertEqual(command[command.index("--filter-size") + 1], "0,1024")
+        self.assertEqual(command[command.index("--filter-words") + 1], "10")
+        self.assertEqual(command[command.index("--filter-lines") + 1], "3")
+        self.assertEqual(command[command.index("--filter-regex") + 1], "Not Found")
+
+    def test_no_filters_by_default(self) -> None:
+        command = build_command("https://example.com", Stage(name="t", wordlist="w.txt"), Path("r.json"))
+        self.assertNotIn("--filter-status", command)
+        self.assertNotIn("--filter-regex", command)
+
+    def test_filters_change_fingerprint(self) -> None:
+        from obliquity.core.gameplan import Gameplan, fingerprint_stage
+        base = Stage(name="t", wordlist="w.txt")
+        filtered = Stage(name="t", wordlist="w.txt", filter_status=[404])
+        gp = Gameplan(name="g", description="", stages=[base])
+        fp1 = fingerprint_stage("https://x", gp, base, project_id=1)
+        fp2 = fingerprint_stage("https://x", gp, filtered, project_id=1)
+        self.assertNotEqual(fp1, fp2)
+
 
 class ProcessControlTests(TestCase):
     def test_terminate_process_stops_running_process(self) -> None:

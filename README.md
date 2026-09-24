@@ -6,13 +6,14 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
 
-**A staged orchestration layer over `feroxbuster`, `ffuf`, and `hashcat`** --
-project-aware, resumable, and reported in one place instead of three.
+**A staged orchestration layer over `feroxbuster`, `ffuf`, `hashcat`, and
+`thc-hydra`** -- project-aware, resumable, and reported in one place instead
+of four.
 
 [Quickstart](#quickstart) &nbsp;&middot;&nbsp;
 [Features](#features) &nbsp;&middot;&nbsp;
@@ -389,6 +390,18 @@ obliquity bust run acme --no-recurse     # disable recursion entirely
 
 (`--depth` and `--no-recurse` are mutually exclusive. A re-scan at a different
 depth is tracked as a distinct run, so it won't be skipped as "already done".)
+
+**Response filters**: cut noise by dropping responses that match a status
+code, byte size, word count, line count, or a body regex (feroxbuster's
+`-C/-S/-W/-N/-X`). Pass them on the CLI (applies to every stage) or set them
+per stage in a gameplan's JSON:
+
+```bash
+obliquity bust run acme --filter-status 404,500 --filter-size 0 --filter-regex 'Not Found'
+```
+
+A run with different filters is fingerprinted as a distinct run, so tightening
+filters doesn't collide with an earlier, noisier scan.
 
 **Extension Intelligence**: appending extensions to a wordlist that *already*
 contains them (`index.php` + `.php` -> `index.php.php`) just wastes requests.

@@ -19,6 +19,13 @@ class Stage:
     depth: int | None = None
     status_codes: list[int] = field(default_factory=lambda: [200, 204, 301, 302, 307, 308, 401, 403])
     collect_extensions: bool = False
+    # Response filters (feroxbuster -C/-S/-W/-N/-X): drop noisy responses by
+    # status code, byte size, word count, line count, or a regex on the body.
+    filter_status: list[int] = field(default_factory=list)
+    filter_size: list[int] = field(default_factory=list)
+    filter_words: list[int] = field(default_factory=list)
+    filter_lines: list[int] = field(default_factory=list)
+    filter_regex: str | None = None
     extra_args: list[str] = field(default_factory=list)
 
 
@@ -66,6 +73,11 @@ def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage, *, project_id:
         "depth": stage.depth,
         "collect_extensions": stage.collect_extensions,
         "status_codes": sorted(stage.status_codes),
+        "filter_status": sorted(stage.filter_status),
+        "filter_size": sorted(stage.filter_size),
+        "filter_words": sorted(stage.filter_words),
+        "filter_lines": sorted(stage.filter_lines),
+        "filter_regex": stage.filter_regex,
         "extra_args": stage.extra_args,
     }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")

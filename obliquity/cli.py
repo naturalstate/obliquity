@@ -392,6 +392,19 @@ def print_stage_summary(row: dict) -> None:
     bullet("Extensions", fmt_list(row["extensions"]))
     bullet("Recursion", fmt_recursion(row["recursion"], row["depth"]))
     bullet("Status codes", fmt_list(row["status_codes"]))
+    filters = []
+    if row.get("filter_status"):
+        filters.append(f"status={fmt_list(row['filter_status'])}")
+    if row.get("filter_size"):
+        filters.append(f"size={fmt_list(row['filter_size'])}")
+    if row.get("filter_words"):
+        filters.append(f"words={fmt_list(row['filter_words'])}")
+    if row.get("filter_lines"):
+        filters.append(f"lines={fmt_list(row['filter_lines'])}")
+    if row.get("filter_regex"):
+        filters.append(f"regex={row['filter_regex']}")
+    if filters:
+        bullet("Filters", ", ".join(filters))
     if row.get("extra_args"):
         bullet("Extra args", fmt_list(row["extra_args"]))
 
@@ -1298,6 +1311,29 @@ def apply_bust_recursion_overrides(gameplan, args) -> None:
             stage.recursion = True
             stage.depth = args.depth
 
+    # Response filters given on the CLI apply to every stage, overriding the
+    # gameplan's own filter fields for those axes.
+    def _int_csv(flag, value):
+        try:
+            return [int(x) for x in value.split(",") if x.strip()]
+        except ValueError:
+            die(f"{flag} expects comma-separated integers, got: {value}")
+
+    for attr, flag in (
+        ("filter_status", "--filter-status"),
+        ("filter_size", "--filter-size"),
+        ("filter_words", "--filter-words"),
+        ("filter_lines", "--filter-lines"),
+    ):
+        raw = getattr(args, attr, None)
+        if raw:
+            value = _int_csv(flag, raw)
+            for stage in gameplan.stages:
+                setattr(stage, attr, value)
+    if getattr(args, "filter_regex", None):
+        for stage in gameplan.stages:
+            stage.filter_regex = args.filter_regex
+
 
 def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
@@ -2093,6 +2129,11 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_recursion = bust_scan_args.add_mutually_exclusive_group()
     bust_recursion.add_argument("--depth", type=int, metavar="N", help="override recursion depth for every stage (enables feroxbuster recursion, --depth N)")
     bust_recursion.add_argument("--no-recurse", action="store_true", help="disable feroxbuster recursion for every stage, overriding the gameplan")
+    bust_scan_args.add_argument("--filter-status", help="drop responses with these status codes (feroxbuster -C), e.g. 404,500")
+    bust_scan_args.add_argument("--filter-size", help="drop responses of these byte sizes (feroxbuster -S), e.g. 0,1024")
+    bust_scan_args.add_argument("--filter-words", help="drop responses with these word counts (feroxbuster -W)")
+    bust_scan_args.add_argument("--filter-lines", help="drop responses with these line counts (feroxbuster -N)")
+    bust_scan_args.add_argument("--filter-regex", help="drop responses whose body matches this regex (feroxbuster -X)")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

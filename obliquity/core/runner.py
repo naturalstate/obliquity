@@ -71,6 +71,11 @@ def preview_plan(url: str, gameplan: Gameplan) -> list[dict]:
                 "recursion": stage.recursion,
                 "depth": stage.depth,
                 "status_codes": stage.status_codes,
+                "filter_status": stage.filter_status,
+                "filter_size": stage.filter_size,
+                "filter_words": stage.filter_words,
+                "filter_lines": stage.filter_lines,
+                "filter_regex": stage.filter_regex,
                 "extra_args": stage.extra_args,
             }
         )
