@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -88,7 +88,7 @@ wrapper that adds the project management layer they don't try to be:
 - **completed-stage skipping** -- rerunning a finished gameplan doesn't redo the work
 - **stop-and-warn instead of silently repeating scans**, with a suggested next step
 - raw output archiving + JSONL parsing into one shared SQLite database per project
-- unified reporting across all three tools: HTML, JSON, CSV, and Markdown
+- unified reporting across all four pillars: HTML, JSON, CSV, and Markdown
 - a small downloadable wordlist catalog, so you're not manually `git clone`-ing SecLists
 
 ### The pain it solves
@@ -128,9 +128,10 @@ so the busywork disappears and you just read results.
   redoing everything
 - **Gameplan escalation ladders** -- `generic-quick` -> `generic-standard`
   -> `generic-deep`, `quick-dictionary` -> `standard`, offered automatically
-- **Unified scan history** across all three tools in one readable log
-- **Multi-format reporting** -- HTML (with cracked-hash and crack-run
-  sections), JSON, CSV, and Markdown, all from the same underlying data
+- **Unified scan history** across all four pillars in one readable log
+- **Multi-format reporting** -- HTML (with cracked-hash, crack-run, and
+  found-credential sections), JSON, CSV, and Markdown, all from the same
+  underlying data
 - **Downloadable wordlist catalog** -- no more manually cloning all of
   SecLists just to get `common.txt` and `rockyou.txt`
 - **Dry-run mode** everywhere, and Burp-friendly proxy/header passthrough
@@ -571,7 +572,7 @@ available for further processing or sharing:
 ```bash
 obliquity report html acme
 obliquity report json acme
-obliquity report csv acme --kind cracked-hashes    # or: findings, runs, crack-runs
+obliquity report csv acme --kind cracked-hashes    # or: findings, runs, crack-runs, found-credentials, login-runs
 obliquity report markdown acme
 ```
 

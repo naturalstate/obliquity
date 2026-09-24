@@ -54,6 +54,7 @@ from obliquity.core.database import (
     get_host,
     get_login_job,
     get_login_run_by_fingerprint,
+    get_login_runs,
     get_project,
     get_run_by_fingerprint,
     get_runs,
@@ -1661,6 +1662,7 @@ def cmd_hydra_run(args) -> None:
     kv("Failed stages", failed, color="red" if failed else "green")
     kv("Interrupted stages", interrupted, color="yellow" if interrupted else "green")
     kv("Credentials found", found)
+    kv("Report command", f"obliquity report html {project['name']}")
     if found:
         kv("View", f"obliquity hydra creds {project['name']}")
 
@@ -1691,13 +1693,16 @@ def gather_report_data(conn, project):
         get_findings(conn, project["id"]),
         get_crack_runs(conn, project["id"]),
         get_cracked_hashes(conn, project["id"]),
+        get_login_runs(conn, project["id"]),
+        get_found_credentials(conn, project["id"]),
     )
 
 
 def write_html_report(conn, project, output: Path | None = None) -> Path:
-    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
+    runs, findings, crack_runs, cracked_hashes, login_runs, found_credentials = gather_report_data(conn, project)
     output = output or Path(project["root_dir"]) / "report.html"
-    generate_html(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
+    generate_html(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes,
+                  login_runs=login_runs, found_credentials=found_credentials)
     section("HTML report", "green")
     kv("Report written", output)
     return output
@@ -1722,9 +1727,10 @@ def cmd_report_html(args) -> None:
 def cmd_report_json(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
-    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
+    runs, findings, crack_runs, cracked_hashes, login_runs, found_credentials = gather_report_data(conn, project)
     output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.json"
-    generate_json(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
+    generate_json(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes,
+                  login_runs=login_runs, found_credentials=found_credentials)
     section("JSON report", "green")
     kv("Report written", output)
 
@@ -1734,6 +1740,8 @@ CSV_DATASETS = {
     "cracked-hashes": lambda data: data[3],
     "runs": lambda data: data[0],
     "crack-runs": lambda data: data[2],
+    "login-runs": lambda data: data[4],
+    "found-credentials": lambda data: data[5],
 }
 
 
@@ -1753,9 +1761,10 @@ def cmd_report_csv(args) -> None:
 def cmd_report_markdown(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
-    runs, findings, crack_runs, cracked_hashes = gather_report_data(conn, project)
+    runs, findings, crack_runs, cracked_hashes, login_runs, found_credentials = gather_report_data(conn, project)
     output = Path(args.output) if args.output else Path(project["root_dir"]) / "report.md"
-    generate_markdown(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes)
+    generate_markdown(project, runs, findings, output, crack_runs=crack_runs, cracked_hashes=cracked_hashes,
+                      login_runs=login_runs, found_credentials=found_credentials)
     section("Markdown report", "green")
     kv("Report written", output)
 

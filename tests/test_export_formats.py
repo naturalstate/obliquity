@@ -85,6 +85,39 @@ class ExportFormatTests(TestCase):
         self.assertIn("- Findings: 1", text)
         self.assertIn("https://example.com/admin", text)
 
+    def test_hydra_credentials_flow_into_json_and_markdown(self) -> None:
+        from obliquity.core.database import (
+            add_login_job,
+            create_or_update_login_run,
+            get_found_credentials,
+            get_login_runs,
+            insert_found_credentials,
+        )
+        job = add_login_job(self.conn, self.project["id"], service="ssh", target="10.0.0.5", name="ssh-box")
+        run = create_or_update_login_run(
+            self.conn, self.project["id"], job["id"], "quick", "s1", "lfp1", "hydra ...", "/raw", "/res",
+        )
+        insert_found_credentials(self.conn, [{
+            "run_id": run["id"], "project_id": self.project["id"], "job_id": job["id"],
+            "service": "ssh", "target": "10.0.0.5", "username": "root", "password": "toor", "source": "s1",
+        }])
+        login_runs = get_login_runs(self.conn, self.project["id"])
+        creds = get_found_credentials(self.conn, self.project["id"])
+
+        out = generate_json(self.project, self.runs, self.findings, self.out_dir / "r.json",
+                            login_runs=login_runs, found_credentials=creds)
+        data = json.loads(out.read_text())
+        self.assertEqual(len(data["found_credentials"]), 1)
+        self.assertEqual(data["found_credentials"][0]["username"], "root")
+        self.assertEqual(len(data["login_runs"]), 1)
+
+        md = generate_markdown(self.project, self.runs, self.findings, self.out_dir / "r.md",
+                               login_runs=login_runs, found_credentials=creds)
+        text = md.read_text()
+        self.assertIn("## Found Credentials", text)
+        self.assertIn("root", text)
+        self.assertIn("toor", text)
+
     def test_markdown_escapes_pipe_characters_in_cells(self) -> None:
         insert_findings(
             self.conn,

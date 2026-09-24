@@ -32,10 +32,14 @@ def generate_html(
     output_path: Path,
     crack_runs: list[Row] | None = None,
     cracked_hashes: list[Row] | None = None,
+    login_runs: list[Row] | None = None,
+    found_credentials: list[Row] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     crack_runs = crack_runs or []
     cracked_hashes = cracked_hashes or []
+    login_runs = login_runs or []
+    found_credentials = found_credentials or []
 
     status_counts = Counter(f["status_code"] for f in findings)
     host_counts = Counter(f["host_url"] for f in findings)
@@ -50,7 +54,36 @@ def generate_html(
             ("failed", sum(1 for r in runs if r["status"] == "failed")),
             ("cracked hashes", len(cracked_hashes)),
             ("crack runs", len(crack_runs)),
+            ("credentials", len(found_credentials)),
+            ("login runs", len(login_runs)),
         ]
+    )
+
+    credential_rows = "".join(
+        f"""
+        <tr>
+          <td><code>{_esc(cr['username'])}</code></td>
+          <td><code>{_esc(cr['password'])}</code></td>
+          <td>{_esc(cr['service'])}</td>
+          <td>{_esc(cr['target'])}</td>
+          <td>{_esc(cr['stage_name'])}</td>
+          <td>{_esc(cr['loginplan_name'])}</td>
+        </tr>
+        """
+        for cr in found_credentials
+    )
+
+    login_run_rows = "".join(
+        f"""
+        <tr>
+          <td>{_esc(r['stage_name'])}</td>
+          <td>{_esc(r['loginplan_name'])}</td>
+          <td>{_esc(r['status'])}</td>
+          <td>{_esc(r['exit_code'])}</td>
+          <td><code>{_esc(r['command'])}</code></td>
+        </tr>
+        """
+        for r in login_runs
     )
 
     crack_run_rows = "".join(
@@ -209,6 +242,18 @@ def generate_html(
     <thead><tr><th>Stage</th><th>Crackplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
     <tbody>{crack_run_rows}</tbody>
   </table>
+
+  <h2>Found Credentials</h2>
+  <table>
+    <thead><tr><th>Username</th><th>Password</th><th>Service</th><th>Target</th><th>Stage</th><th>Loginplan</th></tr></thead>
+    <tbody>{credential_rows}</tbody>
+  </table>
+
+  <h2>Login Runs</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Loginplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
+    <tbody>{login_run_rows}</tbody>
+  </table>
 </main>
 </body>
 </html>
@@ -224,6 +269,8 @@ def generate_json(
     output_path: Path,
     crack_runs: list[Row] | None = None,
     cracked_hashes: list[Row] | None = None,
+    login_runs: list[Row] | None = None,
+    found_credentials: list[Row] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
@@ -233,6 +280,8 @@ def generate_json(
         "findings": [dict(f) for f in findings],
         "crack_runs": [dict(r) for r in (crack_runs or [])],
         "cracked_hashes": [dict(c) for c in (cracked_hashes or [])],
+        "login_runs": [dict(r) for r in (login_runs or [])],
+        "found_credentials": [dict(c) for c in (found_credentials or [])],
     }
     output_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
     return output_path
@@ -275,9 +324,13 @@ def generate_markdown(
     output_path: Path,
     crack_runs: list[Row] | None = None,
     cracked_hashes: list[Row] | None = None,
+    login_runs: list[Row] | None = None,
+    found_credentials: list[Row] | None = None,
 ) -> Path:
     crack_runs = crack_runs or []
     cracked_hashes = cracked_hashes or []
+    login_runs = login_runs or []
+    found_credentials = found_credentials or []
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = [
@@ -288,6 +341,8 @@ def generate_markdown(
         f"{sum(1 for r in runs if r['status'] == 'failed')} failed)",
         f"- Cracked hashes: {len(cracked_hashes)}",
         f"- Crack runs: {len(crack_runs)}",
+        f"- Found credentials: {len(found_credentials)}",
+        f"- Login runs: {len(login_runs)}",
         "",
         "## Findings",
         "",
@@ -303,6 +358,11 @@ def generate_markdown(
             [c["job_name"] or c["hash_file"], c["hash"], c["plaintext"], c["stage_name"]]
             for c in cracked_hashes
         ],
+    )
+    lines += ["## Found Credentials", ""]
+    lines += _md_table(
+        ["Username", "Password", "Service", "Target", "Stage"],
+        [[c["username"], c["password"], c["service"], c["target"], c["stage_name"]] for c in found_credentials],
     )
     lines += ["## Runs", ""]
     lines += _md_table(
