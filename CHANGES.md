@@ -568,6 +568,32 @@ Added a `list_projects()` DB helper (name + host/crack-job/run counts +
 created date, sorted by name) and wired `obliquity project list` to it --
 `project` previously only had `create` and `archive`. Two tests.
 
+### 21. Active-project selection (`project use`/`current`/`unset`)
+
+Added a persisted "active project" (kubectl/docker-context style), stored
+in `$OBLIQUITY_HOME/config.json` via a new `core/config.py`. `project use
+<name>` selects it, `current` shows it, `unset` clears it, and `project
+list` marks it with `* active`. The `project` argument is now optional on
+every command; resolution is explicit name > `OBLIQUITY_PROJECT` env >
+active project, with a "Using active project: X" note printed on implicit
+resolution so the target is never a surprise. bust/fuzz's project+url
+positional ambiguity is resolved by URL shape (a lone `bust run
+https://host` treats the URL as the host, project from active). Verified
+live across all resolution paths. `project create`/`archive` still require
+an explicit name (safety). New config module + 5 tests.
+
+### 22. Cleaned up the profile/tech overlap
+
+You flagged that `--profile` and `--tech` overlapped (both accepted
+aspnet/php). Gave the three host fields distinct, non-overlapping roles:
+`--tech` = backend language/framework, `--profile` = application *type*,
+`--server` = web server software. Removed the duplicated aspnet/php entries
+from the profile map (they belong to `--tech` now), so `PROFILE_GAMEPLAN`
+only holds app-type values (`api` -> api-quick). Recommendation order is
+now tech -> profile -> server -> default. Updated `host add` help text and
+the README with a roles table. A tech value in the profile slot no longer
+matches (documented by a new test).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

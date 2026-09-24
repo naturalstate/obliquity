@@ -65,6 +65,7 @@ project-aware, resumable, and reported in one place instead of three.
   - [Using a virtual environment](#using-a-virtual-environment)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
+  - [Working across projects](#working-across-projects)
   - [`bust`: content discovery](#bust-content-discovery)
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
   - [`crack`: hash cracking](#crack-hash-cracking)
@@ -322,6 +323,31 @@ is what's available once you need more control.
 
 ## Usage
 
+### Working across projects
+
+List projects, and set an **active project** so you stop repeating its name
+on every command (like `kubectl`/`docker` contexts):
+
+```bash
+obliquity project list            # all projects + host/job/run counts; * marks active
+obliquity project use acme        # make acme the active project (persists)
+obliquity project current         # show the active project
+obliquity project unset           # clear it
+```
+
+Once a project is active, its name is optional everywhere. Resolution
+precedence is **explicit name > `OBLIQUITY_PROJECT` env var > active
+project**, and a `Using active project: acme` line prints whenever the name
+wasn't given explicitly, so it's never a surprise which project a command
+hit:
+
+```bash
+obliquity project use acme
+obliquity bust run https://app.acme.com --gameplan generic-quick   # acme implied
+obliquity history                                                   # acme implied
+obliquity bust run other https://x.test --gameplan generic-quick   # explicit wins
+```
+
 ### `bust`: content discovery
 
 ```bash
@@ -343,14 +369,23 @@ automatically:
 obliquity bust run acme --gameplan aspnet-standard
 ```
 
-**Host/Application Awareness**: `--gameplan` itself is optional. With
-`--tech`/`--server`/`--profile` set on the host, Obliquity recommends a
-matching built-in gameplan instead of always defaulting to `generic-quick`,
-and always shows *why*:
+**Host/Application Awareness**: `--gameplan` itself is optional. From the
+host metadata you set with `host add`, Obliquity recommends a matching
+built-in gameplan instead of always defaulting to `generic-quick`, and
+always shows *why*:
 
 ```text
 Selected gameplan: aspnet-standard  (recommended: tech=aspnet)
 ```
+
+The three metadata fields have distinct, non-overlapping roles (checked
+`tech` → `profile` → `server`, then the default):
+
+| Field | Role | Examples |
+|---|---|---|
+| `--tech` | backend language / framework | `aspnet`, `php`, `java`, `node`, `python` |
+| `--profile` | application *type* | `api`, `wordpress`, `admin-panel` (default `generic`) |
+| `--server` | web server software | `iis`, `apache`, `nginx`, `tomcat` |
 
 An explicit `--gameplan` always wins outright, with no label.
 

@@ -202,22 +202,23 @@ CRACKPLAN_ESCALATION = {
 
 
 # Host/Application Awareness: when `--gameplan` isn't given, recommend a
-# built-in gameplan from the --tech/--server/--profile metadata already
-# collected by `host add`, instead of always defaulting to generic-quick.
-# Checked in this order (most to least specific); not the full profile-
-# composition system from CHANGES.md's roadmap -- a lookup table over the
-# built-ins that already exist, extensible as more get added.
+# built-in gameplan from the host metadata `host add` already collects,
+# instead of always defaulting to generic-quick. The three fields have
+# distinct, non-overlapping roles so there's exactly one right place for a
+# given value:
+#   --tech    = backend language/framework (aspnet, php, java, node, python)
+#   --profile = application TYPE            (api, wordpress, admin-panel, ...)
+#   --server  = web server software        (iis, apache, nginx, tomcat)
+# Checked most-to-least specific: tech -> profile -> server -> default.
 TECH_GAMEPLAN = {
     "aspnet": "aspnet-standard",
     "php": "php-standard",
 }
+PROFILE_GAMEPLAN = {
+    "api": "api-quick",
+}
 SERVER_GAMEPLAN = {
     "iis": "aspnet-standard",
-}
-PROFILE_GAMEPLAN = {
-    "aspnet": "aspnet-standard",
-    "php": "php-standard",
-    "api": "api-quick",
 }
 DEFAULT_GAMEPLAN = "generic-quick"
 
@@ -225,15 +226,15 @@ DEFAULT_GAMEPLAN = "generic-quick"
 def recommend_gameplan(host) -> tuple[str, str | None]:
     """Returns (gameplan_name, reason). reason is None for the plain default."""
     tech = (host["tech"] or "").strip().lower()
-    server = (host["server"] or "").strip().lower()
     profile = (host["profile"] or "").strip().lower()
+    server = (host["server"] or "").strip().lower()
 
     if tech in TECH_GAMEPLAN:
         return TECH_GAMEPLAN[tech], f"tech={tech}"
-    if server in SERVER_GAMEPLAN:
-        return SERVER_GAMEPLAN[server], f"server={server}"
     if profile in PROFILE_GAMEPLAN:
         return PROFILE_GAMEPLAN[profile], f"profile={profile}"
+    if server in SERVER_GAMEPLAN:
+        return SERVER_GAMEPLAN[server], f"server={server}"
     return DEFAULT_GAMEPLAN, None
 
 
@@ -1509,9 +1510,9 @@ for detailed options and examples. Only test systems you are authorized to asses
     )
     ha.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     ha.add_argument("url", help="target base URL, including scheme")
-    ha.add_argument("--profile", default="generic", help="host profile (default: generic)")
-    ha.add_argument("--server", help="known web server, such as apache or iis")
-    ha.add_argument("--tech", help="known technology, such as php or aspnet")
+    ha.add_argument("--tech", help="backend language/framework: aspnet, php, java, node, python")
+    ha.add_argument("--server", help="web server software: iis, apache, nginx, tomcat")
+    ha.add_argument("--profile", default="generic", help="application type: api, wordpress, admin-panel (default: generic)")
     ha.add_argument("--notes", help="free-form host notes")
     ha.set_defaults(func=cmd_host_add)
 

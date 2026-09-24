@@ -22,10 +22,23 @@ class RecommendGameplanTests(TestCase):
         self.assertEqual(name, "aspnet-standard")
         self.assertEqual(reason, "server=iis")
 
-    def test_profile_used_when_tech_and_server_unknown(self) -> None:
+    def test_profile_app_type_used_when_tech_unknown(self) -> None:
         name, reason = recommend_gameplan(_host(profile="api"))
         self.assertEqual(name, "api-quick")
         self.assertEqual(reason, "profile=api")
+
+    def test_profile_outranks_server(self) -> None:
+        # app-type (api) is more intentful than the web server (iis)
+        name, reason = recommend_gameplan(_host(profile="api", server="iis"))
+        self.assertEqual(name, "api-quick")
+        self.assertEqual(reason, "profile=api")
+
+    def test_tech_value_in_profile_slot_no_longer_matches(self) -> None:
+        # cleanup: aspnet/php belong to --tech now, not --profile, so putting a
+        # tech value in the profile slot falls through (no overlap).
+        name, reason = recommend_gameplan(_host(profile="aspnet"))
+        self.assertEqual(name, "generic-quick")
+        self.assertIsNone(reason)
 
     def test_falls_back_to_generic_quick_with_no_reason(self) -> None:
         name, reason = recommend_gameplan(_host(profile="generic"))
