@@ -58,7 +58,8 @@ from obliquity.core.database import (
     sum_findings_for_runs,
     update_host,
 )
-from obliquity.core.gameplan import find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
+from obliquity.core.extensions import analyze_wordlist
+from obliquity.core.gameplan import extension_conflicts, find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
 from obliquity.core.reporting import generate_csv, generate_html, generate_json, generate_markdown
@@ -71,6 +72,7 @@ from obliquity.core.wordlists import (
     download_entry,
     installed_path,
     is_installed,
+    resolve_path,
 )
 
 APP_DIR = Path(os.environ.get("OBLIQUITY_HOME", Path.home() / ".obliquity"))
@@ -382,6 +384,19 @@ def print_gameplan_summary(project: dict, host: dict, gameplan, *, mode: str, ar
     if getattr(args, "force", False):
         option_bits.append("force-rerun=true")
     kv("Run options", ", ".join(option_bits) if option_bits else "default")
+
+    # Extension Intelligence: warn when a stage appends extensions to a wordlist
+    # that already carries them (index.php + .php -> index.php.php waste).
+    conflicts = extension_conflicts(gameplan)
+    if conflicts:
+        section("Extension Intelligence", "yellow")
+        print(c("These stages append extensions to a wordlist that already contains "
+                "extensions, which produces double-extension requests (e.g. "
+                "index.php.php) that waste time and find nothing:", "yellow"))
+        for stage_name, wordlist, exts in conflicts:
+            bullet(stage_name, f"{Path(wordlist).name} + [{', '.join(exts)}]", color="yellow")
+        print(c("Consider a directory-only wordlist for these stages, or drop the "
+                "appended extensions. Inspect any list with: obliquity wordlists inspect <name>", "gray"))
 
     # Only expand the per-stage detail for a plan preview; on a real run/resume
     # the compact per-stage execution output covers it, so don't print it twice.
@@ -994,6 +1009,51 @@ def cmd_wordlists_list(args) -> None:
         bullet(label, url)
 
 
+def _resolve_wordlist_target(target: str) -> str:
+    """Resolve an `inspect` argument that may be a catalog name, a bare
+    filename Obliquity has downloaded, or a filesystem path."""
+    entry = catalog_by_name(target)
+    if entry is not None:
+        return str(installed_path(entry))
+    return resolve_path(target)
+
+
+def _human_size(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def cmd_wordlists_inspect(args) -> None:
+    path = _resolve_wordlist_target(args.target)
+    analysis = analyze_wordlist(path)
+    section("Wordlist inspection", "cyan")
+    kv("Requested", args.target)
+    kv("Resolved path", analysis.path)
+    if not analysis.exists:
+        print(c("File not found. If it's a catalog entry, install it with: "
+                f"obliquity wordlists install {args.target}", "yellow"))
+        return
+    kv("Entries", f"{analysis.line_count:,}")
+    kv("Size", _human_size(analysis.byte_size))
+    verdict = "yes" if analysis.has_extensions else "no"
+    color = "yellow" if analysis.has_extensions else "green"
+    kv("Contains extensions", f"{verdict} ({analysis.extension_ratio:.0%} of a {analysis.sampled}-entry sample)", color=color)
+    if analysis.top_extensions:
+        bullet("Most common", ", ".join(f".{ext} ({count})" for ext, count in analysis.top_extensions), color=color)
+    if analysis.has_extensions:
+        print(c("Heads up: appending extensions to this list in a gameplan stage would "
+                "create double-extension requests (e.g. foo.php.php). Use it as-is, without "
+                "appended extensions.", "yellow"))
+    if analysis.preview:
+        subsection("Preview (first entries)", "magenta")
+        for line in analysis.preview:
+            print(f"  {line}")
+
+
 def cmd_wordlists_status(args) -> None:
     section("Wordlist status", "cyan")
     missing = default_profile_missing_entries()
@@ -1530,6 +1590,14 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     ws = wordlists_sub.add_parser("status", help="show which built-in gameplan wordlists are missing", formatter_class=formatter)
     ws.set_defaults(func=cmd_wordlists_status)
+
+    wins = wordlists_sub.add_parser(
+        "inspect", help="analyze a wordlist: size, whether it carries extensions, preview",
+        formatter_class=formatter,
+        epilog="examples:\n  obliquity wordlists inspect seclists-common\n  obliquity wordlists inspect /usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt",
+    )
+    wins.add_argument("target", help="catalog entry name or a path to a wordlist file")
+    wins.set_defaults(func=cmd_wordlists_inspect)
 
     wi = wordlists_sub.add_parser(
         "install", help="download one or more catalog wordlists", formatter_class=formatter,

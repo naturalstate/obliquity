@@ -45,6 +45,12 @@ def build_command(
     if stage.extensions:
         cmd += ["--extensions", ",".join(stage.extensions)]
 
+    # Extension Intelligence: let feroxbuster discover extensions from responses
+    # and fold them into the scan (its -E flag). Previously this Stage field was
+    # defined but never emitted.
+    if stage.collect_extensions:
+        cmd += ["--collect-extensions"]
+
     if stage.recursion:
         if stage.depth is not None:
             cmd += ["--depth", str(stage.depth)]

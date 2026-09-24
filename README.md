@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-66%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-103%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -385,6 +385,21 @@ obliquity bust run acme --no-recurse     # disable recursion entirely
 
 (`--depth` and `--no-recurse` are mutually exclusive. A re-scan at a different
 depth is tracked as a distinct run, so it won't be skipped as "already done".)
+
+**Extension Intelligence**: appending extensions to a wordlist that *already*
+contains them (`index.php` + `.php` -> `index.php.php`) just wastes requests.
+Obliquity detects it and warns during `bust plan`/`run`. Inspect any wordlist
+directly -- entry count, size, whether it carries extensions, and a preview:
+
+```bash
+obliquity wordlists inspect seclists-common
+obliquity wordlists inspect /usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt
+```
+
+Gameplan stages can also use **named extension tiers** instead of copy-pasting
+lists: set a stage's `"extensions"` to `"low"`, `"medium"`, or `"high"` and
+Obliquity expands it (low = common web pages; medium adds config/backup/data;
+high adds archives, scripts, secrets, and more).
 
 **Host/Application Awareness**: `--gameplan` itself is optional. From the
 host metadata you set with `host add`, Obliquity recommends a matching

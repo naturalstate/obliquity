@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from obliquity.core.extensions import expand_extensions, wordlist_has_extensions
 from obliquity.core.wordlists import resolve_path
 
 
@@ -30,7 +31,15 @@ class Gameplan:
 
 def load_gameplan(path: Path) -> Gameplan:
     data = json.loads(path.read_text(encoding="utf-8"))
-    stages = [Stage(**stage) for stage in data.get("stages", [])]
+    raw_stages = data.get("stages", [])
+    # Extension Intelligence: a stage's "extensions" may be a named tier
+    # ("low"/"medium"/"high") instead of a literal list -- expand it before
+    # building the Stage so everything downstream (command, fingerprint) sees
+    # the concrete list.
+    for stage in raw_stages:
+        if "extensions" in stage:
+            stage["extensions"] = expand_extensions(stage["extensions"])
+    stages = [Stage(**stage) for stage in raw_stages]
     for stage in stages:
         wordlist = Path(stage.wordlist)
         if not wordlist.is_absolute():
@@ -55,6 +64,7 @@ def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage, *, project_id:
         "extensions": sorted(stage.extensions),
         "recursion": stage.recursion,
         "depth": stage.depth,
+        "collect_extensions": stage.collect_extensions,
         "status_codes": sorted(stage.status_codes),
         "extra_args": stage.extra_args,
     }
@@ -75,3 +85,27 @@ def find_builtin_gameplan(name: str) -> Path:
 
 def list_builtin_gameplans() -> list[Path]:
     return sorted(profiles_dir().glob("*.json"))
+
+
+def extension_conflicts(gameplan: Gameplan) -> list[tuple[str, str, list[str]]]:
+    """Extension Intelligence: find stages that append extensions to a wordlist
+    that *already* carries extensions -- the double-extension waste case
+    (``index.php`` + ``.php`` -> ``index.php.php``). Returns
+    ``(stage_name, wordlist, appended_extensions)`` per offending stage.
+
+    Only inspects wordlists that exist on disk, so a missing wordlist never
+    turns this into an error; it's advisory."""
+    conflicts: list[tuple[str, str, list[str]]] = []
+    checked: dict[str, bool] = {}
+    for stage in gameplan.stages:
+        if not stage.extensions:
+            continue
+        wl = stage.wordlist
+        if wl not in checked:
+            try:
+                checked[wl] = wordlist_has_extensions(wl)
+            except OSError:
+                checked[wl] = False
+        if checked[wl]:
+            conflicts.append((stage.name, wl, list(stage.extensions)))
+    return conflicts
