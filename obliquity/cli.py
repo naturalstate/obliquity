@@ -1171,12 +1171,28 @@ def resolve_bust_gameplan_choice(project, host, args) -> tuple:
     return resolve_gameplan(name), reason
 
 
+def apply_bust_recursion_overrides(gameplan, args) -> None:
+    """Let --depth / --no-recurse override the gameplan's per-stage recursion
+    settings for every stage. Mutating the stage fields is enough: recursion
+    and depth are both part of the stage fingerprint, so an overridden scan is
+    correctly treated as a distinct run rather than colliding with a cached one."""
+    if getattr(args, "no_recurse", False):
+        for stage in gameplan.stages:
+            stage.recursion = False
+            stage.depth = None
+    elif getattr(args, "depth", None) is not None:
+        for stage in gameplan.stages:
+            stage.recursion = True
+            stage.depth = args.depth
+
+
 def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
     normalize_host_target(args)
     project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
+    apply_bust_recursion_overrides(gameplan, args)
     print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args, recommended_reason=reason)
 
 
@@ -1186,6 +1202,7 @@ def cmd_bust_run(args) -> None:
     project = resolve_project(conn, args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
+    apply_bust_recursion_overrides(gameplan, args)
     original_name = gameplan.name
     gameplan = maybe_warn_and_escalate_bust(conn, project, host, gameplan, args)
     if gameplan.name != original_name:
@@ -1688,6 +1705,9 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_scan_args.add_argument("--threads", type=int, help="feroxbuster worker thread count")
     bust_scan_args.add_argument("--proxy", help="proxy URL, e.g. http://127.0.0.1:8080")
     bust_scan_args.add_argument("--header", action="append", help="header passed to the underlying tool; repeatable")
+    bust_recursion = bust_scan_args.add_mutually_exclusive_group()
+    bust_recursion.add_argument("--depth", type=int, metavar="N", help="override recursion depth for every stage (enables feroxbuster recursion, --depth N)")
+    bust_recursion.add_argument("--no-recurse", action="store_true", help="disable feroxbuster recursion for every stage, overriding the gameplan")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

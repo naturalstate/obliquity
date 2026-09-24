@@ -374,6 +374,18 @@ automatically:
 obliquity bust run acme --gameplan aspnet-standard
 ```
 
+**Recursion control**: each gameplan stage already sets feroxbuster's native
+recursion (it re-scans directories it finds, with the same wordlist). Override
+it for every stage without editing the gameplan:
+
+```bash
+obliquity bust run acme --depth 3        # force recursion depth 3 on all stages
+obliquity bust run acme --no-recurse     # disable recursion entirely
+```
+
+(`--depth` and `--no-recurse` are mutually exclusive. A re-scan at a different
+depth is tracked as a distinct run, so it won't be skipped as "already done".)
+
 **Host/Application Awareness**: `--gameplan` itself is optional. From the
 host metadata you set with `host add`, Obliquity recommends a matching
 built-in gameplan instead of always defaulting to `generic-quick`, and
