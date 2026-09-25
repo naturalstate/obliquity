@@ -181,6 +181,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
     _ensure_column(conn, "projects", "default_bust_gameplan", "TEXT")
     _ensure_column(conn, "projects", "default_fuzz_gameplan", "TEXT")
     _ensure_column(conn, "projects", "default_crackplan", "TEXT")
+    _ensure_column(conn, "projects", "default_bruteplan", "TEXT")
     return conn
 
 
@@ -189,6 +190,7 @@ PROJECT_DEFAULT_COLUMNS = {
     "bust": "default_bust_gameplan",
     "fuzz": "default_fuzz_gameplan",
     "crack": "default_crackplan",
+    "brute": "default_bruteplan",
 }
 
 

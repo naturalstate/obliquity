@@ -216,12 +216,12 @@ def require_login_job(conn, project: dict, target: str | None):
     if target:
         job = get_login_job(conn, project["id"], target)
         if job is None:
-            die(f"login job not found in project: {target}. Add it first with: obliquity hydra job add {project['name']} <target> --service <svc>")
+            die(f"login job not found in project: {target}. Add it first with: obliquity brute job add {project['name']} <target> --service <svc>")
         return job
 
     jobs = list_login_jobs(conn, project["id"])
     if not jobs:
-        die(f"project '{project['name']}' has no login jobs yet. Add one with: obliquity hydra job add {project['name']} <target> --service <svc>")
+        die(f"project '{project['name']}' has no login jobs yet. Add one with: obliquity brute job add {project['name']} <target> --service <svc>")
     if len(jobs) > 1:
         options = ", ".join(j["name"] or j["target"] for j in jobs)
         die(f"project '{project['name']}' has multiple login jobs; specify one: {options}")
@@ -626,6 +626,7 @@ def cmd_project_use(args) -> None:
 # target host's metadata (recommend_gameplan), so there's no single fixed name.
 CRACK_DEFAULT_FALLBACK = "quick-dictionary"
 FUZZ_DEFAULT_FALLBACK = "parameter-names-quick"
+BRUTE_DEFAULT_FALLBACK = "quick"
 
 
 def _default_gameplan_display(project) -> list[tuple[str, str]]:
@@ -641,6 +642,8 @@ def _default_gameplan_display(project) -> list[tuple[str, str]]:
     rows.append(("fuzz", fuzz if fuzz else f"{FUZZ_DEFAULT_FALLBACK} (default)"))
     crack = project["default_crackplan"]
     rows.append(("crack", crack if crack else f"{CRACK_DEFAULT_FALLBACK} (default)"))
+    brute = project["default_bruteplan"]
+    rows.append(("brute", brute if brute else f"{BRUTE_DEFAULT_FALLBACK} (default)"))
     return rows
 
 
@@ -672,7 +675,7 @@ def cmd_project_current(args) -> None:
     subsection("Default gameplans", "magenta")
     for tool, desc in _default_gameplan_display(project):
         bullet(tool, desc)
-    print(c("Change with: obliquity project set-gameplan <bust|fuzz|crack> <name> "
+    print(c("Change with: obliquity project set-gameplan <bust|fuzz|crack|brute> <name> "
             "(or --clear to revert to the built-in default).", "gray"))
 
 
@@ -705,6 +708,7 @@ def cmd_project_set_gameplan(args) -> None:
         "bust": resolve_gameplan,
         "fuzz": resolve_fuzz_plan,
         "crack": resolve_crackplan,
+        "brute": resolve_loginplan,
     }[tool]
     try:
         resolver(name)
@@ -980,8 +984,8 @@ def cmd_gameplans_list(args) -> None:
                         print(f"     {c('Mask:', 'cyan', bold=True)} {row['mask']}")
                 blank()
 
-    if tool in (None, "hydra"):
-        section("Hydra login gameplans", "cyan")
+    if tool in (None, "brute"):
+        section("Brute login gameplans (backend: hydra)", "cyan")
         for path in list_builtin_loginplans():
             plan = load_loginplan(path)
             subsection(plan.name, "magenta")
@@ -1486,7 +1490,7 @@ def normalize_login_job_target(conn, args) -> None:
         args.project = None
 
 
-def cmd_hydra_job_add(args) -> None:
+def cmd_brute_job_add(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_job_target(conn, args)
     project = resolve_project(conn, args)
@@ -1526,7 +1530,7 @@ def cmd_hydra_job_add(args) -> None:
         kv("Form spec", job["form_spec"])
 
 
-def cmd_hydra_job_list(args) -> None:
+def cmd_brute_job_list(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
     jobs = list_login_jobs(conn, project["id"])
@@ -1546,7 +1550,7 @@ def cmd_hydra_job_list(args) -> None:
             bullet("Notes", job["notes"])
 
 
-def cmd_hydra_job_remove(args) -> None:
+def cmd_brute_job_remove(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
     if not args.yes:
@@ -1580,7 +1584,7 @@ def print_login_stage_summary(row: dict) -> None:
 
 
 def print_loginplan_summary(project: dict, job: dict, plan, *, mode: str, args) -> None:
-    section(f"Obliquity Hydra: {mode}", "cyan")
+    section(f"Obliquity Brute: {mode}", "cyan")
     kv("Project", project["name"])
     kv("Job", job["name"] or job["target"])
     kv("Service", job["service"])
@@ -1658,21 +1662,21 @@ def normalize_login_run_target(conn, args) -> None:
         args.project = None
 
 
-def cmd_hydra_plan(args) -> None:
+def cmd_brute_plan(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_run_target(conn, args)
     project = resolve_project(conn, args)
     job = require_login_job(conn, project, args.job)
-    plan = resolve_loginplan(args.gameplan or "quick")
+    plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
     print_loginplan_summary(project, job, plan, mode="Plan Preview", args=args)
 
 
-def cmd_hydra_run(args) -> None:
+def cmd_brute_run(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_run_target(conn, args)
     project = resolve_project(conn, args)
     job = require_login_job(conn, project, args.job)
-    plan = resolve_loginplan(args.gameplan or "quick")
+    plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     print_loginplan_summary(project, job, plan, mode=mode, args=args)
@@ -1700,15 +1704,15 @@ def cmd_hydra_run(args) -> None:
     kv("Credentials found", found)
     kv("Report command", f"obliquity report html {project['name']}")
     if found:
-        kv("View", f"obliquity hydra creds {project['name']}")
+        kv("View", f"obliquity brute creds {project['name']}")
 
 
-def cmd_hydra_resume(args) -> None:
+def cmd_brute_resume(args) -> None:
     args.resume = True
-    cmd_hydra_run(args)
+    cmd_brute_run(args)
 
 
-def cmd_hydra_creds(args) -> None:
+def cmd_brute_creds(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
     creds = get_found_credentials(conn, project["id"])
@@ -1834,7 +1838,7 @@ def format_duration(started_at, finished_at) -> str:
     return elapsed_time((end - start).total_seconds())
 
 
-TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack", "hydra": "hydra"}
+TOOL_LABELS = {"feroxbuster": "bust", "ffuf": "fuzz", "hashcat": "crack", "hydra": "brute"}
 
 
 def cmd_history(args) -> None:
@@ -1999,7 +2003,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         epilog="examples:\n  obliquity gameplans list\n  obliquity gameplans list crack\n  obliquity gameplans list bust --brief",
         formatter_class=formatter,
     )
-    gl.add_argument("tool", nargs="?", choices=["bust", "fuzz", "crack", "hydra"], help="show only this tool's gameplans (default: all)")
+    gl.add_argument("tool", nargs="?", choices=["bust", "fuzz", "crack", "brute"], help="show only this tool's gameplans (default: all)")
     gl.add_argument("--brief", action="store_true", help="show only names and summary fields")
     gl.set_defaults(func=cmd_gameplans_list)
 
@@ -2043,7 +2047,7 @@ for detailed options and examples. Only test systems you are authorized to asses
         "  obliquity project set-gameplan fuzz --clear",
         formatter_class=formatter,
     )
-    psg.add_argument("tool", choices=["bust", "fuzz", "crack"], help="which tool's default to change")
+    psg.add_argument("tool", choices=["bust", "fuzz", "crack", "brute"], help="which tool's default to change")
     psg.add_argument("name", nargs="?", help="built-in gameplan name or JSON path (omit with --clear)")
     psg.add_argument("--project", help="project name (optional if an active project is set via 'project use')")
     psg.add_argument("--clear", action="store_true", help="revert to the built-in default for this tool")
@@ -2247,7 +2251,7 @@ for detailed options and examples. Only test systems you are authorized to asses
     cres.set_defaults(force=False)
     cres.set_defaults(func=cmd_crack_resume)
 
-    # --- hydra (online login attacks) ---
+    # --- brute (online login attacks; backend: thc-hydra) ---
     login_target_args = argparse.ArgumentParser(add_help=False)
     login_target_args.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     login_target_args.add_argument(
@@ -2259,25 +2263,25 @@ for detailed options and examples. Only test systems you are authorized to asses
     login_scan_args.add_argument("--gameplan", default=None, help="built-in loginplan name or JSON path (default: quick)")
     login_scan_args.add_argument("--dry-run", action="store_true", help="print the hydra command without running it")
 
-    hydra = sub.add_parser(
-        "hydra", help="plan, run, or resume online login attacks (thc-hydra)", formatter_class=formatter,
+    brute = sub.add_parser(
+        "brute", help="plan, run, or resume online login/credential attacks (backend: thc-hydra)", formatter_class=formatter,
         epilog="""examples:
-  obliquity hydra job add acme 10.0.0.5 --service ssh --name ssh-box
-  obliquity hydra job add acme app.acme.test --service http-post-form --form-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
-  obliquity hydra plan acme --gameplan quick
-  obliquity hydra run acme ssh-box --gameplan common-creds
-  obliquity hydra creds acme""",
+  obliquity brute job add acme 10.0.0.5 --service ssh --name ssh-box
+  obliquity brute job add acme app.acme.test --service http-post-form --form-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
+  obliquity brute plan acme --gameplan quick
+  obliquity brute run acme ssh-box --gameplan common-creds
+  obliquity brute creds acme""",
     )
-    hydra_sub = hydra.add_subparsers(dest="hydra_cmd", required=True)
+    brute_sub = brute.add_subparsers(dest="brute_cmd", required=True)
 
-    hydra_job = hydra_sub.add_parser("job", help="add, list, or remove login targets (service + host)")
-    hydra_job_sub = hydra_job.add_subparsers(dest="hydra_job_cmd", required=True)
+    brute_job = brute_sub.add_parser("job", help="add, list, or remove login targets (service + host)")
+    brute_job_sub = brute_job.add_subparsers(dest="brute_job_cmd", required=True)
 
-    hja = hydra_job_sub.add_parser(
+    hja = brute_job_sub.add_parser(
         "add", help="add a login target as a job", formatter_class=formatter,
         epilog="examples:\n"
-        "  obliquity hydra job add acme 10.0.0.5 --service ssh\n"
-        "  obliquity hydra job add acme app.acme.test --service http-post-form --form-spec \"/login:user=^USER^&pass=^PASS^:F=invalid\"",
+        "  obliquity brute job add acme 10.0.0.5 --service ssh\n"
+        "  obliquity brute job add acme app.acme.test --service http-post-form --form-spec \"/login:user=^USER^&pass=^PASS^:F=invalid\"",
     )
     hja.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     hja.add_argument("target", nargs="?", help="hostname or IP to attack (optional if --host is given)")
@@ -2288,51 +2292,51 @@ for detailed options and examples. Only test systems you are authorized to asses
     hja.add_argument("--module-args", dest="module_args", help="extra hydra module argument for non-form services")
     hja.add_argument("--name", help="friendly name to refer to this job later")
     hja.add_argument("--notes", help="free-form job notes")
-    hja.set_defaults(func=cmd_hydra_job_add)
+    hja.set_defaults(func=cmd_brute_job_add)
 
-    hjl = hydra_job_sub.add_parser("list", help="list project login jobs", epilog="example:\n  obliquity hydra job list acme", formatter_class=formatter)
+    hjl = brute_job_sub.add_parser("list", help="list project login jobs", epilog="example:\n  obliquity brute job list acme", formatter_class=formatter)
     hjl.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
-    hjl.set_defaults(func=cmd_hydra_job_list)
+    hjl.set_defaults(func=cmd_brute_job_list)
 
-    hjr = hydra_job_sub.add_parser("remove", help="remove a login job and its records", formatter_class=formatter, epilog="example:\n  obliquity hydra job remove acme ssh-box")
+    hjr = brute_job_sub.add_parser("remove", help="remove a login job and its records", formatter_class=formatter, epilog="example:\n  obliquity brute job remove acme ssh-box")
     hjr.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     hjr.add_argument("target", help="job name or target")
     hjr.add_argument("--yes", action="store_true", help="confirm removal without prompting")
-    hjr.set_defaults(func=cmd_hydra_job_remove)
+    hjr.set_defaults(func=cmd_brute_job_remove)
 
-    hp = hydra_sub.add_parser(
+    hp = brute_sub.add_parser(
         "plan", help="preview stages without creating runs", formatter_class=formatter,
         parents=[login_target_args],
-        epilog="example:\n  obliquity hydra plan acme --gameplan quick",
+        epilog="example:\n  obliquity brute plan acme --gameplan quick",
     )
     hp.add_argument("--gameplan", default=None, help="built-in loginplan name or JSON path (default: quick)")
-    hp.set_defaults(func=cmd_hydra_plan)
+    hp.set_defaults(func=cmd_brute_plan)
 
-    hr = hydra_sub.add_parser(
+    hr = brute_sub.add_parser(
         "run", help="execute a staged hydra login attack", formatter_class=formatter,
         parents=[login_target_args, login_scan_args],
         epilog="""examples:
-  obliquity hydra run acme --gameplan quick
-  obliquity hydra run acme ssh-box --gameplan common-creds
-  obliquity hydra run acme --dry-run""",
+  obliquity brute run acme --gameplan quick
+  obliquity brute run acme ssh-box --gameplan common-creds
+  obliquity brute run acme --dry-run""",
     )
     hr.add_argument("--force", action="store_true", help="rerun completed stages")
-    hr.set_defaults(func=cmd_hydra_run)
+    hr.set_defaults(func=cmd_brute_run)
 
-    hres = hydra_sub.add_parser(
+    hres = brute_sub.add_parser(
         "resume", help="skip completed stages and retry interrupted or failed work",
         description="Resume a loginplan using stored stage fingerprints. Completed stages are skipped. "
         "Note: this is stage-level resume, not mid-attack resume within a single hydra pass.",
         formatter_class=formatter,
         parents=[login_target_args, login_scan_args],
-        epilog="example:\n  obliquity hydra resume acme --gameplan common-creds",
+        epilog="example:\n  obliquity brute resume acme --gameplan common-creds",
     )
     hres.set_defaults(force=False)
-    hres.set_defaults(func=cmd_hydra_resume)
+    hres.set_defaults(func=cmd_brute_resume)
 
-    hcreds = hydra_sub.add_parser("creds", help="list credentials found for a project", formatter_class=formatter, epilog="example:\n  obliquity hydra creds acme")
+    hcreds = brute_sub.add_parser("creds", help="list credentials found for a project", formatter_class=formatter, epilog="example:\n  obliquity brute creds acme")
     hcreds.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
-    hcreds.set_defaults(func=cmd_hydra_creds)
+    hcreds.set_defaults(func=cmd_brute_creds)
 
     runs = sub.add_parser(
         "runs", help="show stored stage runs", formatter_class=formatter,
@@ -2350,7 +2354,7 @@ for detailed options and examples. Only test systems you are authorized to asses
   obliquity history acme --status failed --limit 20""",
     )
     history.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
-    history.add_argument("--tool", choices=["feroxbuster", "ffuf", "hashcat"], help="filter by underlying tool")
+    history.add_argument("--tool", choices=["feroxbuster", "ffuf", "hashcat", "hydra"], help="filter by underlying tool")
     history.add_argument("--status", help="filter by pending, running, completed, failed, or interrupted")
     history.add_argument("--limit", type=int, help="show only the N most recent entries")
     history.set_defaults(func=cmd_history)

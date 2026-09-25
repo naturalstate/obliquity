@@ -58,10 +58,12 @@ class DefaultGameplanTests(TestCase):
             set_project_default_gameplan(conn, p["id"], "bust", "generic-deep")
             set_project_default_gameplan(conn, p["id"], "fuzz", "api-request-quick")
             set_project_default_gameplan(conn, p["id"], "crack", "rules-basic")
+            set_project_default_gameplan(conn, p["id"], "brute", "common-creds")
             refreshed = get_project(conn, "acme")
             self.assertEqual(refreshed["default_bust_gameplan"], "generic-deep")
             self.assertEqual(refreshed["default_fuzz_gameplan"], "api-request-quick")
             self.assertEqual(refreshed["default_crackplan"], "rules-basic")
+            self.assertEqual(refreshed["default_bruteplan"], "common-creds")
 
             set_project_default_gameplan(conn, p["id"], "crack", None)
             self.assertIsNone(get_project(conn, "acme")["default_crackplan"])

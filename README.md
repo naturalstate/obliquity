@@ -55,7 +55,7 @@ of four.
   - [`bust`: content discovery](#bust-content-discovery)
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
   - [`crack`: hash cracking](#crack-hash-cracking)
-  - [`hydra`: online login attacks](#hydra-online-login-attacks)
+  - [`brute`: online login attacks](#brute-online-login-attacks)
   - [Wordlist setup](#wordlist-setup)
   - [Reports](#reports)
   - [Resume & scan history](#resume--scan-history)
@@ -79,7 +79,7 @@ around four pillars, each wrapping one underlying tool:
 | **`bust`** | [`feroxbuster`](https://github.com/epi052/feroxbuster) | Staged directory/file content discovery |
 | **`fuzz`** | [`ffuf`](https://github.com/ffuf/ffuf) | Parameter, endpoint, and raw-request fuzzing |
 | **`crack`** | [`hashcat`](https://hashcat.net/hashcat/) | Staged **offline** password/hash cracking |
-| **`hydra`** | [`thc-hydra`](https://github.com/vanhauser-thc/thc-hydra) | Staged **online** login/credential attacks |
+| **`brute`** | [`thc-hydra`](https://github.com/vanhauser-thc/thc-hydra) | Staged **online** login/credential attacks |
 
 It is **not** a replacement for any of those tools -- it's a thin, honest
 wrapper that adds the project management layer they don't try to be:
@@ -504,32 +504,33 @@ wordlists glued together), and the two hybrids `hybrid-wordlist-mask`
 > from hashcat's own `.restore` checkpoint (mid-keyspace), not just from the
 > last completed stage.
 
-### `hydra`: online login attacks
+### `brute`: online login attacks
 
-`hydra` (thc-hydra) is the one **online** pillar: unlike `crack` (offline
-hashing, no host), it makes live login attempts against a service -- web
-login forms, SSH, FTP, SMB, RDP, and more -- so it fits the project/host
+`brute` (backend: `thc-hydra`) is the one **online** pillar: unlike `crack`
+(offline hashing, no host), it makes live login attempts against a service --
+web login forms, SSH, FTP, SMB, RDP, and more -- so it fits the project/host
 model directly. A login job is service + target (optionally linked to a
 project host); a loginplan stages credential lists the same way the others
-stage wordlists.
+stage wordlists. (The pillar is named for the *function*, like bust/fuzz/crack;
+`hydra` is just today's backend, with medusa/ncrack as future options.)
 
 ```bash
 # Add a login target as a job (the role a host URL plays for bust/fuzz)
-obliquity hydra job add acme 10.0.0.5 --service ssh --name ssh-box --port 22
+obliquity brute job add acme 10.0.0.5 --service ssh --name ssh-box --port 22
 
 # Web login forms need hydra's form spec (path : body-with-^USER^/^PASS^ : failure-text)
-obliquity hydra job add acme app.acme.test --service http-post-form --name web-login \
+obliquity brute job add acme app.acme.test --service http-post-form --name web-login \
   --form-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
 
-obliquity hydra job list acme
+obliquity brute job list acme
 
 # Preview, dry-run, execute -- job name optional with exactly one job
-obliquity hydra plan acme --gameplan quick
-obliquity hydra run ssh-box --gameplan common-creds --dry-run
-obliquity hydra run ssh-box --gameplan common-creds
+obliquity brute plan acme --gameplan quick
+obliquity brute run ssh-box --gameplan common-creds --dry-run
+obliquity brute run ssh-box --gameplan common-creds
 
 # Review what was recovered
-obliquity hydra creds acme
+obliquity brute creds acme
 ```
 
 > **Authorization required.** hydra performs live credential guessing. Only
@@ -539,7 +540,7 @@ obliquity hydra creds acme
 > prints this reminder on every plan/run and defaults the built-in plans to
 > conservative parallelism.
 >
-> `hydra resume` is **stage-level** (it skips already-completed stages), not
+> `brute resume` is **stage-level** (it skips already-completed stages), not
 > mid-attack resume within a single hydra pass.
 
 ```bash
@@ -745,15 +746,11 @@ what it doesn't do yet. Roughly in the order they'd get built:
   to a different machine
 - **Wordlist compiler/deduper** (`obliquity wordlists build`) -- generate
   deduplicated staged lists (`quick`, `standard-delta`, `large-delta`)
-- **thc-hydra as a fourth pillar** -- *online* login/credential attacks
-  against a live service (web login forms, FTP, SSH, SMB, RDP, ...). Unlike
-  `crack` (offline hashcat/john against a hash file, no host), hydra is
-  intrinsically host/service-related, so it slots naturally into the
-  existing project -> host model and reuses the wordlist catalog
 - **Alternate-tool backends** -- `gobuster` as an alternative to
   feroxbuster, `wfuzz` as an alternative to ffuf, `john` as an alternative
-  to hashcat, selectable per run (defaulting to the current trio) --
-  deliberately deferred until bust/fuzz/crack themselves are solid
+  to hashcat, `medusa`/`ncrack` as alternatives to hydra under `brute`,
+  selectable per run (defaulting to the current backends) -- deliberately
+  deferred until the core pillars are solid
 - **Burp Suite integration** -- a Burp extension bridging to a local
   Obliquity API, so findings and requests can move in both directions
 
