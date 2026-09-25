@@ -61,6 +61,9 @@ from obliquity.core.database import (
     list_crack_jobs,
     list_hosts,
     list_login_jobs,
+    get_project_options,
+    set_project_option,
+    unset_project_option,
     sum_cracked_for_runs,
     sum_findings_for_runs,
     update_host,
@@ -139,6 +142,80 @@ def resolve_loginplan(name_or_path: str):
     if path.exists():
         return load_loginplan(path)
     return load_loginplan(find_builtin_loginplan(name_or_path))
+
+
+# --- Metasploit-style stateful per-tool options ------------------------------
+# Each tool ("module") has a set of options a user can `set` on the active
+# project and reuse, so `run` needs no flags. `gameplan` is stored in its own
+# dedicated column (default_*_gameplan) via set-gameplan; everything else lives
+# in project_options. An explicit CLI flag always overrides a stored option.
+#
+# Each option: (key, args_attr, type, required, help). `required` is advisory
+# for `show options`; the run handlers still do the real validation with their
+# existing friendly errors.
+class _Opt:
+    __slots__ = ("key", "attr", "typ", "required", "help")
+
+    def __init__(self, key, attr, typ="str", required=False, help=""):
+        self.key = key
+        self.attr = attr
+        self.typ = typ
+        self.required = required
+        self.help = help
+
+
+OPTION_SCHEMA: dict[str, list[_Opt]] = {
+    "bust": [
+        _Opt("host", "url", help="target URL (optional if the project has exactly one host)"),
+        _Opt("gameplan", "gameplan", help="built-in gameplan name or JSON path"),
+        _Opt("threads", "threads", "int", help="feroxbuster worker threads"),
+        _Opt("rate", "rate_limit", "int", help="max requests/sec"),
+        _Opt("proxy", "proxy", help="proxy URL, e.g. http://127.0.0.1:8080"),
+    ],
+    "fuzz": [
+        _Opt("host", "url", help="target URL (optional if the project has exactly one host)"),
+        _Opt("gameplan", "gameplan", help="built-in fuzz gameplan name or JSON path"),
+        _Opt("endpoint", "endpoint", required=True, help="path for parameter-name fuzzing (e.g. /search)"),
+        _Opt("template", "template", help="URL template containing FUZZ"),
+        _Opt("request", "request", help="raw HTTP request file containing FUZZ"),
+    ],
+    "crack": [
+        _Opt("job", "job", help="crack job name or hash file"),
+        _Opt("gameplan", "gameplan", help="built-in crackplan name or JSON path"),
+    ],
+    "brute": [
+        _Opt("job", "job", required=True, help="login job name or target"),
+        _Opt("gameplan", "gameplan", help="built-in loginplan name or JSON path"),
+    ],
+}
+
+# tool -> the projects column holding that tool's default gameplan (matches
+# database.PROJECT_DEFAULT_COLUMNS).
+_GAMEPLAN_COLUMN = {
+    "bust": "default_bust_gameplan",
+    "fuzz": "default_fuzz_gameplan",
+    "crack": "default_crackplan",
+    "brute": "default_bruteplan",
+}
+
+
+def apply_stored_options(conn, project, tool: str, args) -> None:
+    """Fill in any run/plan args the user didn't pass on the CLI from the
+    project's stored options. Explicit flags (already non-empty on args) win."""
+    stored = get_project_options(conn, project["id"], tool)
+    for opt in OPTION_SCHEMA.get(tool, []):
+        if opt.key == "gameplan":
+            continue  # gameplan comes from the dedicated default column, handled by resolvers
+        if getattr(args, opt.attr, None):
+            continue  # explicit flag wins
+        if opt.key in stored and stored[opt.key] is not None:
+            val = stored[opt.key]
+            if opt.typ == "int":
+                try:
+                    val = int(val)
+                except ValueError:
+                    continue
+            setattr(args, opt.attr, val)
 
 
 def require_project(conn, name: str):
@@ -682,9 +759,13 @@ def cmd_project_current(args) -> None:
     subsection("Gameplan per tool", "magenta")
     labels = {"bust": "Bust ", "crack": "Crack", "fuzz": "Fuzz ", "brute": "Brute"}
     for tool, desc in _default_gameplan_display(project):
-        kv(labels.get(tool, tool), desc)
-    print(c("Change with: obliquity project set-gameplan <bust|fuzz|crack|brute> <name> "
-            "(or --clear to revert to the built-in default).", "gray"))
+        line = desc
+        opts = get_project_options(conn, project["id"], tool)
+        if opts:
+            line += "   [" + ", ".join(f"{k}={v}" for k, v in sorted(opts.items())) + "]"
+        kv(labels.get(tool, tool), line)
+    print(c("Change with: obliquity project set-gameplan <tool> <name>, or "
+            "obliquity set <tool> <option> <value>.", "gray"))
 
 
 def _distinct_meta(hosts, field: str) -> str:
@@ -703,6 +784,89 @@ def _host_meta_summary(host) -> str:
         if val:
             parts.append(f"{field}={val}")
     return ", ".join(parts) if parts else "no metadata"
+
+
+def _opt_for(tool: str, key: str):
+    for opt in OPTION_SCHEMA.get(tool, []):
+        if opt.key == key:
+            return opt
+    return None
+
+
+def cmd_set(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    tool, key, value = args.tool, args.key.lower(), args.value
+    opt = _opt_for(tool, key)
+    if opt is None:
+        valid = ", ".join(o.key for o in OPTION_SCHEMA[tool])
+        die(f"unknown option '{key}' for {tool}. Valid: {valid}")
+    if opt.typ == "int":
+        try:
+            int(value)
+        except ValueError:
+            die(f"{tool} {key} expects an integer, got: {value}")
+
+    if key == "gameplan":
+        # Validate and store in the dedicated default-gameplan column.
+        resolver = {"bust": resolve_gameplan, "fuzz": resolve_fuzz_plan,
+                    "crack": resolve_crackplan, "brute": resolve_loginplan}[tool]
+        try:
+            resolver(value)
+        except Exception as exc:  # noqa: BLE001
+            die(f"not a valid {tool} gameplan: {value} ({exc})")
+        set_project_default_gameplan(conn, project["id"], tool, value)
+    else:
+        set_project_option(conn, project["id"], tool, key, value)
+
+    section("Option set", "green")
+    kv("Project", project["name"])
+    print(c(f"{tool} {key} => {value}", "cyan", bold=True))
+    print(c(f"'obliquity {tool} run' will use it (an explicit --{key.replace('_','-')} still overrides).", "gray"))
+
+
+def cmd_unset(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    tool, key = args.tool, args.key.lower()
+    if _opt_for(tool, key) is None:
+        valid = ", ".join(o.key for o in OPTION_SCHEMA[tool])
+        die(f"unknown option '{key}' for {tool}. Valid: {valid}")
+    if key == "gameplan":
+        set_project_default_gameplan(conn, project["id"], tool, None)
+        removed = True
+    else:
+        removed = unset_project_option(conn, project["id"], tool, key)
+    section("Option unset" if removed else "Nothing to unset", "green" if removed else "yellow")
+    kv("Project", project["name"])
+    kv(f"{tool} {key}", "reverted to default" if removed else "was not set")
+
+
+def cmd_options(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    tool = args.tool
+    stored = get_project_options(conn, project["id"], tool)
+    gameplan_default = project[_GAMEPLAN_COLUMN[tool]]
+    section(f"Options: {tool}  (project {project['name']})", "cyan")
+    header = f"  {'OPTION'.ljust(10)} {'VALUE'.ljust(30)} {'REQUIRED'.ljust(9)} SOURCE"
+    print(c(header, "gray", bold=True))
+    for opt in OPTION_SCHEMA[tool]:
+        if opt.key == "gameplan":
+            value = gameplan_default or "(built-in default)"
+            source = "set" if gameplan_default else "default"
+        elif opt.key in stored:
+            value = stored[opt.key]
+            source = "set"
+        else:
+            value = "-"
+            source = "-"
+        req = "yes" if opt.required else "no"
+        color = "green" if source == "set" else "yellow" if opt.required and source == "-" else "cyan"
+        print(f"  {c(opt.key.ljust(10), color, bold=True)} {str(value).ljust(30)} {req.ljust(9)} {source}")
+    print(c(f"\nSet with:  obliquity set {tool} <option> <value>", "gray"))
+    print(c(f"Then run:  obliquity {tool} run", "gray"))
+    print(c("(You can still pass flags directly on 'run' -- they override stored options.)", "gray"))
 
 
 def cmd_project_set_gameplan(args) -> None:
@@ -1284,6 +1448,7 @@ def cmd_fuzz_run(args) -> None:
     conn = connect(DB_PATH)
     normalize_host_target(args)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "fuzz", args)
     host = require_host(conn, project, args.url)
     fuzz_name = args.gameplan or project["default_fuzz_gameplan"] or "parameter-names-quick"
     plan = resolve_fuzz_plan(fuzz_name)
@@ -1393,6 +1558,7 @@ def cmd_bust_plan(args) -> None:
     conn = connect(DB_PATH)
     normalize_host_target(args)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "bust", args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
     apply_bust_recursion_overrides(gameplan, args)
@@ -1403,6 +1569,7 @@ def cmd_bust_run(args) -> None:
     conn = connect(DB_PATH)
     normalize_host_target(args)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "bust", args)
     host = require_host(conn, project, args.url)
     gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
     apply_bust_recursion_overrides(gameplan, args)
@@ -1462,6 +1629,7 @@ def cmd_bust_resume(args) -> None:
 def cmd_crack_plan(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "crack", args)
     job = require_job(conn, project, args.job)
     crack_name = args.gameplan or project["default_crackplan"] or "quick-dictionary"
     crackplan = resolve_crackplan(crack_name)
@@ -1471,6 +1639,7 @@ def cmd_crack_plan(args) -> None:
 def cmd_crack_run(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "crack", args)
     job = require_job(conn, project, args.job)
     crack_name = args.gameplan or project["default_crackplan"] or "quick-dictionary"
     crackplan = resolve_crackplan(crack_name)
@@ -1716,6 +1885,7 @@ def cmd_brute_plan(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_run_target(conn, args)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "brute", args)
     job = require_login_job(conn, project, args.job)
     plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
     print_loginplan_summary(project, job, plan, mode="Plan Preview", args=args)
@@ -1725,6 +1895,7 @@ def cmd_brute_run(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_run_target(conn, args)
     project = resolve_project(conn, args)
+    apply_stored_options(conn, project, "brute", args)
     job = require_login_job(conn, project, args.job)
     plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
 
@@ -2007,6 +2178,42 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
     doctor.set_defaults(func=cmd_doctor)
+
+    # --- Metasploit-style stateful options (set / unset / options) ---
+    _tool_choices = ["bust", "fuzz", "crack", "brute"]
+    setp = sub.add_parser(
+        "set", help="set a per-tool option on the active project (Metasploit-style)",
+        description="Store an option for a tool so 'run' can use it without flags. "
+        "An explicit flag on 'run' always overrides a stored option.",
+        formatter_class=formatter,
+        epilog="examples:\n"
+        "  obliquity set fuzz host https://app.acme.test\n"
+        "  obliquity set fuzz endpoint /search\n"
+        "  obliquity set bust gameplan generic-deep\n"
+        "  obliquity options fuzz     # then:  obliquity fuzz run",
+    )
+    setp.add_argument("tool", choices=_tool_choices)
+    setp.add_argument("key", help="option name (see 'obliquity options <tool>')")
+    setp.add_argument("value", help="value to store")
+    setp.add_argument("--project", help="project name (optional if an active project is set)")
+    setp.set_defaults(func=cmd_set)
+
+    unsetp = sub.add_parser(
+        "unset", help="clear a per-tool option on the active project", formatter_class=formatter,
+        epilog="example:\n  obliquity unset fuzz endpoint",
+    )
+    unsetp.add_argument("tool", choices=_tool_choices)
+    unsetp.add_argument("key", help="option name to clear")
+    unsetp.add_argument("--project", help="project name (optional if an active project is set)")
+    unsetp.set_defaults(func=cmd_unset)
+
+    optp = sub.add_parser(
+        "options", help="show settable options for a tool (Metasploit 'show options')",
+        formatter_class=formatter, epilog="example:\n  obliquity options fuzz",
+    )
+    optp.add_argument("tool", choices=_tool_choices)
+    optp.add_argument("--project", help="project name (optional if an active project is set)")
+    optp.set_defaults(func=cmd_options)
 
     wordlists = sub.add_parser(
         "wordlists", help="manage downloadable wordlists and rules", formatter_class=formatter,

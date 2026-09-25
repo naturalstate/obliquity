@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-132%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -52,6 +52,7 @@ of four.
 - [Quickstart](#quickstart)
 - [Usage](#usage)
   - [Working across projects](#working-across-projects)
+  - [Stateful options (Metasploit-style)](#stateful-options-metasploit-style)
   - [`bust`: content discovery](#bust-content-discovery)
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
   - [`crack`: hash cracking](#crack-hash-cracking)
@@ -358,6 +359,29 @@ obliquity bust run https://app.acme.com --gameplan generic-quick   # acme implie
 obliquity history                                                   # acme implied
 obliquity bust run other https://x.test --gameplan generic-quick   # explicit wins
 ```
+
+### Stateful options (Metasploit-style)
+
+If you'd rather set things up once and just `run` -- like `msfconsole`'s
+`set`/`show options`/`run` -- each tool has options you can store on the active
+project. This is **additive**: every flag below still works on `run` and
+**overrides** a stored option.
+
+```bash
+obliquity set fuzz host https://app.acme.test
+obliquity set fuzz endpoint /search
+obliquity set fuzz gameplan parameter-names-quick
+obliquity options fuzz          # 'show options': OPTION / VALUE / REQUIRED / SOURCE
+obliquity fuzz run              # uses the stored options -- no flags needed
+obliquity unset fuzz endpoint   # revert one option
+```
+
+Precedence is **explicit flag > stored option > project default > built-in
+default**, so `obliquity fuzz run --endpoint /admin` still wins for that run.
+Stored options also show up in `obliquity project current`. Settable options per
+tool: `bust` (host, gameplan, threads, rate, proxy), `fuzz` (host, gameplan,
+endpoint, template, request), `crack`/`brute` (job, gameplan). `gameplan` is the
+same value `project set-gameplan` manages.
 
 ### `bust`: content discovery
 

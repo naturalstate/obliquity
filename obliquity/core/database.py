@@ -151,6 +151,19 @@ CREATE TABLE IF NOT EXISTS login_runs (
     FOREIGN KEY(job_id) REFERENCES login_jobs(id) ON DELETE CASCADE
 );
 
+-- Metasploit-style stateful per-tool options stored on a project. gameplan
+-- keeps its own dedicated columns (default_*_gameplan); this holds the rest
+-- (host, endpoint, template, request, threads, rate, proxy, job, ...).
+CREATE TABLE IF NOT EXISTS project_options (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    tool TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    UNIQUE(project_id, tool, key),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS found_credentials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id INTEGER NOT NULL,
@@ -200,6 +213,35 @@ def set_project_default_gameplan(conn: sqlite3.Connection, project_id: int, tool
     column = PROJECT_DEFAULT_COLUMNS[tool]
     conn.execute(f"UPDATE projects SET {column} = ? WHERE id = ?", (value, project_id))
     conn.commit()
+
+
+def set_project_option(conn: sqlite3.Connection, project_id: int, tool: str, key: str, value: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO project_options(project_id, tool, key, value)
+        VALUES(?, ?, ?, ?)
+        ON CONFLICT(project_id, tool, key) DO UPDATE SET value = excluded.value
+        """,
+        (project_id, tool, key, value),
+    )
+    conn.commit()
+
+
+def unset_project_option(conn: sqlite3.Connection, project_id: int, tool: str, key: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM project_options WHERE project_id = ? AND tool = ? AND key = ?",
+        (project_id, tool, key),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_project_options(conn: sqlite3.Connection, project_id: int, tool: str) -> dict:
+    rows = conn.execute(
+        "SELECT key, value FROM project_options WHERE project_id = ? AND tool = ?",
+        (project_id, tool),
+    )
+    return {row["key"]: row["value"] for row in rows}
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

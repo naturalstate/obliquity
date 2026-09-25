@@ -761,6 +761,31 @@ matches (documented by a new test).
   PTY. (Feature parked separately: Metasploit-style `set`/`show options`/`run`
   workflow -- design recommended, build deferred.)
 
+### 31. Metasploit-style stateful options -- Phase 1 (2026-09-25)
+
+- **`set` / `unset` / `options`**: each tool ("module") now has stored,
+  reusable options on the active project so you can set once and just `run`,
+  msfconsole-style. `obliquity set fuzz endpoint /search`,
+  `obliquity options fuzz` (the `show options` table: OPTION/VALUE/REQUIRED/
+  SOURCE), `obliquity unset fuzz endpoint`.
+- **CLI flags fully retained and take precedence**: resolution is now
+  explicit flag > stored option > project default > built-in default. A new
+  `apply_stored_options()` fills any run/plan arg the user didn't pass from the
+  stored options, before host/job/gameplan resolution; the run handlers keep
+  doing the real required-option validation with their existing friendly errors.
+- **Storage**: new `project_options(project_id, tool, key, value)` table (+
+  `set_project_option`/`unset_project_option`/`get_project_options`). `gameplan`
+  stays in its dedicated default column (so `set <tool> gameplan` and
+  `project set-gameplan` are one source of truth); everything else lives here.
+  Settable: bust (host, gameplan, threads, rate, proxy), fuzz (host, gameplan,
+  endpoint, template, request), crack/brute (job, gameplan).
+- Stored options now show inline in `project current` (this is the "Fuzz
+  endpoint if defined" line from the earlier project-view request).
+- Answers the earlier fuzz papercut directly: `set fuzz endpoint /search` then
+  `fuzz run` works with no flags. 5 new tests (137 total, all green).
+- **Phase 2 (interactive `obliquity console` REPL over this same state) is
+  recommended but not yet built.**
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
