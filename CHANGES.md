@@ -727,6 +727,24 @@ matches (documented by a new test).
   `[bust] feroxbuster` so the pillar is obvious.
 - 3 new CLI tests (131 total, all green).
 
+### 29. Explorer polish: colors, load-on-Enter, --no-tui (2026-09-25)
+
+- **Minimal app-matching colors** in both TUI backends: cyan title/detail
+  titles, magenta section headers/divider, yellow accents, green/red status --
+  the same palette the CLI uses. curses uses color pairs; Textual uses a small
+  CSS block.
+- **Enter loads a gameplan** as the **active project's default** for its tool
+  (equivalent to `project set-gameplan`), with a green confirmation in the
+  status line; the title bar shows the active project (or "no active project").
+  Enter on a bare wordlist explains it loads via a gameplan and points at one
+  that uses it (Obliquity runs gameplans, not lone wordlists). Wired through a
+  decoupled `on_load` callback built in `cmd_explore`, so `explorer_tui` still
+  does no DB work itself.
+- **`--no-tui` switch** (and `OBLIQUITY_NO_TUI` env) forces the plain-text
+  listing -- same effect as `--backend text`.
+- 1 new CLI test (132 total, all green). Verified colors + Enter-persists in a
+  PTY.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

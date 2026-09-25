@@ -1862,7 +1862,28 @@ def cmd_report_markdown(args) -> None:
 def cmd_explore(args) -> None:
     # Lazy import so a TUI backend is only pulled in when the explorer runs.
     from obliquity.explorer_tui import run_explorer
-    run_explorer(prefer=getattr(args, "backend", "auto"))
+
+    prefer = getattr(args, "backend", "auto")
+    if getattr(args, "no_tui", False) or os.environ.get("OBLIQUITY_NO_TUI"):
+        prefer = "text"
+
+    conn = connect(DB_PATH)
+    # Soft-resolve the active project (no error if none) so Enter can "load" a
+    # gameplan as that project's default for its tool.
+    name = os.environ.get("OBLIQUITY_PROJECT") or active_project()
+    project = get_project(conn, name) if name else None
+
+    def on_load(tool: str, gameplan_name: str) -> str:
+        if project is None:
+            return "No active project -- run 'obliquity project use <name>' first, then reopen."
+        set_project_default_gameplan(conn, project["id"], tool, gameplan_name)
+        return f"Loaded: {project['name']} {tool} default -> {gameplan_name}"
+
+    run_explorer(
+        prefer=prefer,
+        on_load=on_load,
+        project_label=(project["name"] if project else None),
+    )
 
 
 def cmd_runs(args) -> None:
@@ -2064,6 +2085,11 @@ for detailed options and examples. Only test systems you are authorized to asses
     explore.add_argument(
         "--backend", choices=["auto", "curses", "textual", "text"], default="auto",
         help="TUI backend (default: auto -- curses on macOS/Linux, Textual on Windows, text otherwise)",
+    )
+    explore.add_argument(
+        "--no-tui", action="store_true",
+        help="skip the interactive TUI and print a plain text listing instead "
+        "(same as --backend text; can also set OBLIQUITY_NO_TUI)",
     )
     explore.set_defaults(func=cmd_explore)
 

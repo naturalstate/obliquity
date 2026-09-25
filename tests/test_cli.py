@@ -47,6 +47,10 @@ class HelpTests(TestCase):
         args = build_parser().parse_args(["explore", "--backend", "textual"])
         self.assertEqual(args.backend, "textual")
 
+    def test_explore_no_tui_flag(self) -> None:
+        args = build_parser().parse_args(["explore", "--no-tui"])
+        self.assertTrue(args.no_tui)
+
     def test_archive_accepts_nonexistent_project_mode(self) -> None:
         args = build_parser().parse_args(
             ["project", "archive", "demo", "--yes", "--if-exists"]

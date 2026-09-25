@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-132%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -573,9 +573,17 @@ command.
 
 It picks a TUI backend for your OS automatically: **curses** (stdlib) on
 macOS/Linux, and **Textual** on Windows (`pip install textual`). Force one with
-`obliquity explore --backend {auto,curses,textual,text}`. With no interactive
-terminal (or nothing installed) it prints a plain overview. To inspect a single
-list non-interactively, use [`wordlists inspect`](#bust-content-discovery).
+`obliquity explore --backend {auto,curses,textual,text}`, or skip the TUI
+entirely with `--no-tui` (or `OBLIQUITY_NO_TUI=1`) for a plain printed listing.
+With no interactive terminal (or nothing installed) it prints the overview
+anyway. To inspect a single list non-interactively, use
+[`wordlists inspect`](#bust-content-discovery).
+
+**Loading a gameplan from the explorer**: press **Enter** on a gameplan to set
+it as your **active project's default** for that tool (the same as
+`project set-gameplan`), so your next `bust`/`fuzz`/`crack`/`brute` run uses it
+automatically. (Enter on a bare wordlist points you to the gameplan(s) that
+include it, since Obliquity runs gameplans rather than lone wordlists.)
 
 Typing a pillar with no subcommand -- `obliquity bust`, `fuzz`, `crack`,
 `brute` -- lists that tool's built-in gameplans (a quick reminder of what you

@@ -26,7 +26,7 @@ from obliquity.core.explorer import (
 )
 
 TITLE = "Obliquity Wordlist Explorer"
-HELP = "↑/↓ move  ·  PgUp/PgDn scroll details  ·  Home/End  ·  q quit"
+HELP = "↑/↓ move  ·  Enter load gameplan  ·  PgUp/PgDn details  ·  Home/End  ·  q quit"
 
 
 def _has_module(name: str) -> bool:
@@ -73,16 +73,16 @@ def choose_backend(prefer: str = "auto") -> str:
     return "text"
 
 
-def run_explorer(prefer: str = "auto") -> None:
+def run_explorer(prefer: str = "auto", *, on_load=None, project_label: str | None = None) -> None:
     gameplans = collect_gameplans()
     wordlists = collect_wordlists(gameplans)
 
     backend = choose_backend(prefer)
     if backend == "curses":
         import curses
-        curses.wrapper(_main_loop, gameplans, wordlists)
+        curses.wrapper(_main_loop, gameplans, wordlists, on_load, project_label)
     elif backend == "textual":
-        _run_textual(gameplans, wordlists)
+        _run_textual(gameplans, wordlists, on_load, project_label)
     else:
         if not sys.stdout.isatty():
             reason = "not attached to an interactive terminal"
@@ -109,7 +109,7 @@ def _detail_lines(kind: str, obj: object, wordlists: list[WordlistRef]) -> list[
     return wordlist_detail_lines(obj, wordlists)  # type: ignore[arg-type]
 
 
-def _main_loop(stdscr, gameplans, wordlists) -> None:
+def _main_loop(stdscr, gameplans, wordlists, on_load=None, project_label=None) -> None:
     import curses
 
     curses.curs_set(0)
@@ -118,14 +118,26 @@ def _main_loop(stdscr, gameplans, wordlists) -> None:
     if use_color:
         curses.start_color()
         curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_CYAN, -1)     # headers / title
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)   # accents
+        # Match the CLI palette: cyan sections, magenta subsections, yellow
+        # accents, green success, red errors.
+        curses.init_pair(1, curses.COLOR_CYAN, -1)     # title, detail title
+        curses.init_pair(2, curses.COLOR_MAGENTA, -1)  # section headers
+        curses.init_pair(3, curses.COLOR_YELLOW, -1)   # accents / info status
+        curses.init_pair(4, curses.COLOR_GREEN, -1)    # success status
+        curses.init_pair(5, curses.COLOR_RED, -1)      # error status
+
+    def cp(n):
+        return curses.color_pair(n) if use_color else 0
+
+    dim = curses.A_DIM if hasattr(curses, "A_DIM") else 0
 
     rows = _build_rows(gameplans, wordlists)
     nav = [i for i, r in enumerate(rows) if r[0] != "header"]
     cur = 0                      # index into nav
     detail_scroll = 0
     detail_cache: dict[int, list[str]] = {}
+    status = ""
+    status_kind = "info"         # info | ok | err
 
     def detail_for(row_idx: int) -> list[str]:
         kind, obj, _ = rows[row_idx]
@@ -146,15 +158,12 @@ def _main_loop(stdscr, gameplans, wordlists) -> None:
 
         left_w = min(42, max(24, w // 3))
         list_h = h - 3
-        cattr = curses.color_pair(1) if use_color else 0
 
-        # title + help
-        _safe_add(stdscr, 0, 0, TITLE.ljust(w), w, curses.A_BOLD | cattr)
-        _safe_add(stdscr, 1, 0, HELP, w, curses.A_DIM if hasattr(curses, "A_DIM") else 0)
+        # title (+ active project) and help
+        title = TITLE + (f"   [project: {project_label}]" if project_label else "   [no active project]")
+        _safe_add(stdscr, 0, 0, title.ljust(w), w, curses.A_BOLD | cp(1))
+        _safe_add(stdscr, 1, 0, HELP, w, dim)
 
-        selected_row = rows[nav[cur]]
-
-        # keep selection visible: compute a window over rows
         sel_row_idx = nav[cur]
         top = 0
         if sel_row_idx >= list_h:
@@ -168,15 +177,15 @@ def _main_loop(stdscr, gameplans, wordlists) -> None:
             kind, _obj, label = rows[ri]
             y = 2 + screen_line
             if kind == "header":
-                _safe_add(stdscr, y, 0, label[: left_w - 1], left_w - 1, curses.A_BOLD | cattr)
+                _safe_add(stdscr, y, 0, label[: left_w - 1], left_w - 1, curses.A_BOLD | cp(2))
             else:
-                attr = curses.A_REVERSE if ri == sel_row_idx else 0
+                attr = (curses.A_REVERSE | cp(1)) if ri == sel_row_idx else 0
                 text = ("  " + label)[: left_w - 1].ljust(left_w - 1)
                 _safe_add(stdscr, y, 0, text, left_w - 1, attr)
 
         # divider
         for y in range(2, 2 + list_h):
-            _safe_add(stdscr, y, left_w - 1, "│", 1)
+            _safe_add(stdscr, y, left_w - 1, "│", 1, cp(2))
 
         # right detail pane
         detail = detail_for(sel_row_idx)
@@ -189,36 +198,51 @@ def _main_loop(stdscr, gameplans, wordlists) -> None:
             if di >= len(detail):
                 break
             line = detail[di]
-            attr = (curses.A_BOLD | cattr) if di == 0 else 0
+            attr = (curses.A_BOLD | cp(1)) if di == 0 else 0
             _safe_add(stdscr, 2 + screen_line, left_w + 1, line[:pane_w], pane_w, attr)
 
-        # footer: position + scroll hint
-        pos = f"{cur + 1}/{len(nav)}"
-        if max_scroll:
-            pos += f"   details {ds + 1}-{min(ds + pane_h, len(detail))}/{len(detail)}"
-        _safe_add(stdscr, h - 1, 0, pos.ljust(w), w, curses.A_DIM if hasattr(curses, "A_DIM") else 0)
+        # footer: status message (if any) else position + scroll hint
+        if status:
+            scolor = {"ok": cp(4), "err": cp(5)}.get(status_kind, cp(3))
+            _safe_add(stdscr, h - 1, 0, status.ljust(w), w, curses.A_BOLD | scolor)
+        else:
+            pos = f"{cur + 1}/{len(nav)}"
+            if max_scroll:
+                pos += f"   details {ds + 1}-{min(ds + pane_h, len(detail))}/{len(detail)}"
+            _safe_add(stdscr, h - 1, 0, pos.ljust(w), w, dim)
 
         stdscr.refresh()
 
         ch = stdscr.getch()
+        # any navigation clears a transient status
         if ch in (ord("q"), 27):
             return
         elif ch in (curses.KEY_DOWN, ord("j")):
-            cur = min(cur + 1, len(nav) - 1)
-            detail_scroll = 0
+            cur = min(cur + 1, len(nav) - 1); detail_scroll = 0; status = ""
         elif ch in (curses.KEY_UP, ord("k")):
-            cur = max(cur - 1, 0)
-            detail_scroll = 0
+            cur = max(cur - 1, 0); detail_scroll = 0; status = ""
         elif ch in (curses.KEY_NPAGE, ord(" ")):
             detail_scroll = min(detail_scroll + pane_h - 1, max_scroll)
         elif ch in (curses.KEY_PPAGE, ord("b")):
             detail_scroll = max(detail_scroll - (pane_h - 1), 0)
         elif ch in (curses.KEY_HOME, ord("g")):
-            cur = 0
-            detail_scroll = 0
+            cur = 0; detail_scroll = 0; status = ""
         elif ch in (curses.KEY_END, ord("G")):
-            cur = len(nav) - 1
-            detail_scroll = 0
+            cur = len(nav) - 1; detail_scroll = 0; status = ""
+        elif ch in (curses.KEY_ENTER, 10, 13):
+            kind, obj, _label = rows[sel_row_idx]
+            if kind == "gameplan":
+                if on_load is None:
+                    status, status_kind = "Loading isn't available in this context.", "info"
+                else:
+                    status = on_load(obj.tool, obj.name)
+                    status_kind = "err" if status.startswith("No active project") else "ok"
+            elif kind == "wordlist":
+                if obj.referenced_by:
+                    status = f"'{obj.name}' loads via a gameplan -- Enter a gameplan that uses it (e.g. {obj.referenced_by[0]})."
+                else:
+                    status = f"'{obj.name}' is a standalone wordlist -- not part of a gameplan to load."
+                status_kind = "info"
 
 
 def _safe_add(stdscr, y, x, text, maxlen, attr=0) -> None:
@@ -230,7 +254,7 @@ def _safe_add(stdscr, y, x, text, maxlen, attr=0) -> None:
 
 # --- Textual backend (cross-platform; the Windows-friendly option) ----------
 
-def _run_textual(gameplans, wordlists) -> None:
+def _run_textual(gameplans, wordlists, on_load=None, project_label=None) -> None:
     """Textual renderer -- same data as the curses one. Imported lazily so
     Textual is only required when this backend is actually chosen."""
     from textual.app import App, ComposeResult
@@ -244,14 +268,17 @@ def _run_textual(gameplans, wordlists) -> None:
             self.payload = obj
 
     class ExplorerApp(App):
+        # Minimal palette to match the CLI: cyan accents, magenta headers.
         CSS = """
         Horizontal { height: 1fr; }
-        #list { width: 40%; border-right: solid $panel; }
+        #list { width: 40%; border-right: solid $primary; }
         #detailwrap { width: 60%; padding: 0 1; }
-        Row.header { color: $accent; text-style: bold; }
+        Row.header { color: magenta; text-style: bold; }
+        #status { dock: bottom; height: 1; color: cyan; }
         """
-        BINDINGS = [("q", "quit", "Quit")]
+        BINDINGS = [("q", "quit", "Quit"), ("enter", "load", "Load gameplan")]
         TITLE = TITLE
+        SUB_TITLE = f"project: {project_label}" if project_label else "no active project"
 
         def compose(self) -> ComposeResult:
             yield Header()
@@ -269,6 +296,7 @@ def _run_textual(gameplans, wordlists) -> None:
                 yield ListView(*items, id="list")
                 with VerticalScroll(id="detailwrap"):
                     yield Static("", id="detail")
+            yield Static("", id="status")
             yield Footer()
 
         def on_mount(self) -> None:
@@ -285,8 +313,22 @@ def _run_textual(gameplans, wordlists) -> None:
                 lines = wordlist_detail_lines(row.payload, wordlists)
             detail.update("\n".join(lines))
 
-        def on_list_view_highlighted(self, event) -> None:  # Textual ListView.Highlighted
+        def on_list_view_highlighted(self, event) -> None:
             self._render(event.item)
+
+        def action_load(self) -> None:
+            lv = self.query_one("#list", ListView)
+            row = lv.highlighted_child
+            status = self.query_one("#status", Static)
+            if row is None or getattr(row, "kind", None) == "header":
+                return
+            if row.kind == "gameplan":
+                msg = on_load(row.payload.tool, row.payload.name) if on_load else "Loading unavailable."
+            elif row.payload.referenced_by:
+                msg = f"'{row.payload.name}' loads via a gameplan -- Enter a gameplan that uses it."
+            else:
+                msg = f"'{row.payload.name}' is standalone -- not part of a gameplan."
+            status.update(msg)
 
     ExplorerApp().run()
 
