@@ -664,19 +664,36 @@ def cmd_project_current(args) -> None:
 
     hosts = list_hosts(conn, project["id"])
     jobs = list_crack_jobs(conn, project["id"])
+    login_jobs = list_login_jobs(conn, project["id"])
     kv("Root", project["root_dir"])
     kv("Created", project["created_at"])
-    bullet("Hosts", len(hosts))
-    if hosts:
-        for h in hosts:
-            bullet("  " + h["url"], _host_meta_summary(h), color="gray")
-    bullet("Crack jobs", len(jobs))
 
-    subsection("Default gameplans", "magenta")
+    # Targets block: hosts comma-separated, then the distinct metadata across
+    # them (usually one host, so this reads as that host's tech/profile/server).
+    kv("Host[s]", ", ".join(h["url"] for h in hosts) if hosts else "(none yet)")
+    kv("Tech", _distinct_meta(hosts, "tech"))
+    kv("Profile", _distinct_meta(hosts, "profile"))
+    kv("Server", _distinct_meta(hosts, "server"))
+    if jobs:
+        kv("Crack jobs", ", ".join(j["name"] or j["hash_file"] for j in jobs))
+    if login_jobs:
+        kv("Login jobs", ", ".join(j["name"] or j["target"] for j in login_jobs))
+
+    subsection("Gameplan per tool", "magenta")
+    labels = {"bust": "Bust ", "crack": "Crack", "fuzz": "Fuzz ", "brute": "Brute"}
     for tool, desc in _default_gameplan_display(project):
-        bullet(tool, desc)
+        kv(labels.get(tool, tool), desc)
     print(c("Change with: obliquity project set-gameplan <bust|fuzz|crack|brute> <name> "
             "(or --clear to revert to the built-in default).", "gray"))
+
+
+def _distinct_meta(hosts, field: str) -> str:
+    vals = []
+    for h in hosts:
+        v = h[field]
+        if v and v not in vals:
+            vals.append(v)
+    return ", ".join(vals) if vals else "-"
 
 
 def _host_meta_summary(host) -> str:
@@ -1001,6 +1018,25 @@ def cmd_gameplans_list(args) -> None:
                 blank()
 
 
+_TOOL_RUN_HINT = {
+    "bust": "obliquity bust run <project> [url] --gameplan <name>   (also: plan, resume)",
+    "fuzz": "obliquity fuzz run <project> [url] --gameplan <name> --endpoint /path   (also: plan, resume)",
+    "crack": "obliquity crack run <project> [job] --gameplan <name>   (also: job add/list, plan, resume)",
+    "brute": "obliquity brute run <project> [job] --gameplan <name>   (also: job add/list, plan, resume, creds)",
+}
+
+
+def cmd_tool_gameplans(args) -> None:
+    """Bare `obliquity <tool>` (no subcommand) lists that pillar's gameplans."""
+    tool = args._tool
+    args.tool = tool
+    if not hasattr(args, "brief"):
+        args.brief = False
+    cmd_gameplans_list(args)
+    print(c(f"\nRun one: {_TOOL_RUN_HINT.get(tool, '')}", "gray"))
+    print(c(f"Full help: obliquity {tool} -h", "gray"))
+
+
 def cmd_doctor(args) -> None:
     statuses = inventory_tools()
     section("Core tools", "cyan")
@@ -1194,14 +1230,28 @@ def cmd_coverage(args) -> None:
     if not rows:
         print("No operations recorded yet.")
         return
+    # "operation" is the kind of work a run did; spell it out once so the
+    # column values (content-path, parameter-name, ...) aren't cryptic.
+    print(c("operation = kind of work: content-path (directory/file discovery), "
+            "parameter-name/parameter-value/request-input (fuzzing), "
+            "dictionary/mask/... (cracking), login (credential attack).", "gray"))
+    header = (
+        f"  {'OPERATION'.ljust(18)} "
+        f"{'TOOL'.ljust(20)} "
+        f"{'STATUS'.ljust(12)} "
+        f"GAMEPLAN"
+    )
     current_host = None
     for row in rows:
         if row["host_url"] != current_host:
             current_host = row["host_url"]
-            subsection(current_host, "magenta")
+            subsection(f"Host: {current_host}", "magenta")
+            print(c(header, "gray", bold=True))
+        pillar = TOOL_LABELS.get(row["tool"], row["tool"])
+        tool_label = f"[{pillar}] {row['tool']}"
         print(
             f"  {c(row['operation_category'].ljust(18), 'cyan', bold=True)} "
-            f"{c(row['tool'].ljust(13), 'yellow')} "
+            f"{c(tool_label.ljust(20), 'yellow')} "
             f"{c(row['status'].ljust(12), 'green' if row['status'] == 'completed' else 'yellow')} "
             f"{row['gameplan_name']}"
         )
@@ -1810,9 +1860,9 @@ def cmd_report_markdown(args) -> None:
 
 
 def cmd_explore(args) -> None:
-    # Lazy import so curses is only pulled in when the explorer actually runs.
+    # Lazy import so a TUI backend is only pulled in when the explorer runs.
     from obliquity.explorer_tui import run_explorer
-    run_explorer()
+    run_explorer(prefer=getattr(args, "backend", "auto"))
 
 
 def cmd_runs(args) -> None:
@@ -1978,10 +2028,11 @@ for detailed options and examples. Only test systems you are authorized to asses
   obliquity fuzz run acme https://app.test --gameplan parameter-names-quick --endpoint /search
   obliquity fuzz run acme https://app.test --gameplan parameter-values-quick --template '/search?q=FUZZ'
   obliquity fuzz run acme https://app.test --gameplan api-request-quick --request request.txt""")
-    fuzz_sub = fuzz.add_subparsers(dest="fuzz_cmd", required=True)
+    fuzz.set_defaults(func=cmd_tool_gameplans, _tool="fuzz")
+    fuzz_sub = fuzz.add_subparsers(dest="fuzz_cmd", required=False)
     fl = fuzz_sub.add_parser("list", help="list ffuf gameplans", formatter_class=formatter)
     fl.add_argument("--brief", action="store_true")
-    fl.set_defaults(func=cmd_gameplans_list)
+    fl.set_defaults(func=cmd_gameplans_list, tool="fuzz")
     fr = fuzz_sub.add_parser(
         "run", help="execute an ffuf gameplan", formatter_class=formatter,
         parents=[project_host_args, fuzz_scan_args],
@@ -2007,8 +2058,12 @@ for detailed options and examples. Only test systems you are authorized to asses
         "it carries extensions, a head/tail sample, description and typical use, which "
         "gameplan(s) reference it, and similar wordlists. Falls back to a plain listing when "
         "there is no interactive terminal.",
-        epilog="example:\n  obliquity explore",
+        epilog="example:\n  obliquity explore\n  obliquity explore --backend textual",
         formatter_class=formatter,
+    )
+    explore.add_argument(
+        "--backend", choices=["auto", "curses", "textual", "text"], default="auto",
+        help="TUI backend (default: auto -- curses on macOS/Linux, Textual on Windows, text otherwise)",
     )
     explore.set_defaults(func=cmd_explore)
 
@@ -2161,7 +2216,8 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 
     bust = sub.add_parser("bust", help="plan, run, or resume staged content discovery")
-    bust_sub = bust.add_subparsers(dest="bust_cmd", required=True)
+    bust.set_defaults(func=cmd_tool_gameplans, _tool="bust")
+    bust_sub = bust.add_subparsers(dest="bust_cmd", required=False)
 
     bp = bust_sub.add_parser(
         "plan", help="preview stages without creating runs", formatter_class=formatter,
@@ -2215,7 +2271,8 @@ for detailed options and examples. Only test systems you are authorized to asses
   obliquity crack run acme ntlm-dump --gameplan standard --open-report
   obliquity crack resume acme --gameplan standard""",
     )
-    crack_sub = crack.add_subparsers(dest="crack_cmd", required=True)
+    crack.set_defaults(func=cmd_tool_gameplans, _tool="crack")
+    crack_sub = crack.add_subparsers(dest="crack_cmd", required=False)
 
     crack_job = crack_sub.add_parser("job", help="add, list, or remove crack targets (hash files)")
     crack_job_sub = crack_job.add_subparsers(dest="crack_job_cmd", required=True)
@@ -2291,7 +2348,8 @@ for detailed options and examples. Only test systems you are authorized to asses
   obliquity brute run acme ssh-box --gameplan common-creds
   obliquity brute creds acme""",
     )
-    brute_sub = brute.add_subparsers(dest="brute_cmd", required=True)
+    brute.set_defaults(func=cmd_tool_gameplans, _tool="brute")
+    brute_sub = brute.add_subparsers(dest="brute_cmd", required=False)
 
     brute_job = brute_sub.add_parser("job", help="add, list, or remove login targets (service + host)")
     brute_job_sub = brute_job.add_subparsers(dest="brute_job_cmd", required=True)

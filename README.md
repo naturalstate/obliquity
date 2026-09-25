@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -569,9 +569,17 @@ the highlighted item and scrolls with `PgUp`/`PgDn`; `q` quits. For a
 (and which), a **head and tail sample**, its description and typical use, the
 **gameplan(s) that reference it**, and **similar wordlists**. For a
 **gameplan** it shows its stages, the wordlist each uses, and the exact run
-command. It needs an interactive terminal (curses); piped or on Windows
-without `windows-curses` it prints a plain overview instead. To inspect a
-single list non-interactively, use [`wordlists inspect`](#bust-content-discovery).
+command.
+
+It picks a TUI backend for your OS automatically: **curses** (stdlib) on
+macOS/Linux, and **Textual** on Windows (`pip install textual`). Force one with
+`obliquity explore --backend {auto,curses,textual,text}`. With no interactive
+terminal (or nothing installed) it prints a plain overview. To inspect a single
+list non-interactively, use [`wordlists inspect`](#bust-content-discovery).
+
+Typing a pillar with no subcommand -- `obliquity bust`, `fuzz`, `crack`,
+`brute` -- lists that tool's built-in gameplans (a quick reminder of what you
+can run).
 
 ### Wordlist setup
 

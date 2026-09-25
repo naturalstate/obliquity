@@ -701,6 +701,32 @@ matches (documented by a new test).
   core stdlib-only (no Textual dependency). Keys: arrows/j/k, PgUp/PgDn,
   Home/End, q. 7 new tests (128 total, all green).
 
+### 28. Cross-platform TUI backends + CLI-clarity polish (2026-09-25)
+
+- **Wordlist Explorer is now OS-aware with two real TUI backends** and a text
+  fallback (three tiers): **curses** (stdlib, default on macOS/Linux) and
+  **Textual** (cross-platform, the Windows-friendly option -- and the library
+  the repo's `tui_*` demos already used). `explorer_tui.choose_backend()` picks
+  per-platform (POSIX: curses -> textual -> text; Windows: curses only if
+  windows-curses is present -> textual -> text) and honors an explicit
+  `obliquity explore --backend {auto,curses,textual,text}`. Both backends
+  render the same `core/explorer.py` data; each is imported lazily so neither is
+  a dependency. No-TTY / nothing-installed prints the overview with an install
+  hint.
+- **Bare `obliquity <tool>` lists that pillar's gameplans** -- `obliquity bust`,
+  `fuzz`, `crack`, `brute` with no subcommand now show a per-tool gameplan list
+  plus a run hint, instead of an argparse "subcommand required" error. (`fuzz
+  list` is now fuzz-only for consistency.)
+- **`project current` reformatted** into a targets + per-tool block: `Host[s]`
+  (comma-separated), `Tech`/`Profile`/`Server` (distinct across hosts), crack/
+  login jobs, then `Bust`/`Fuzz`/`Crack`/`Brute` gameplan-per-tool with the
+  `(default)` markers.
+- **`coverage` clarified**: added column headers (OPERATION / TOOL / STATUS /
+  GAMEPLAN), a one-line legend explaining what "operation" means (content-path,
+  parameter-name, ...), a `Host:` label on each target, and the tool shown as
+  `[bust] feroxbuster` so the pillar is obvious.
+- 3 new CLI tests (131 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

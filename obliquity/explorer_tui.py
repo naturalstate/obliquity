@@ -1,13 +1,19 @@
-"""Curses TUI for the Wordlist Explorer.
+"""TUI backends for the Wordlist Explorer.
 
-Kept out of cli.py so the curses import only happens when the command runs.
-The data all comes from obliquity.core.explorer; this module is just a
-renderer plus a keyboard loop, with a plain-text fallback for non-TTY /
-no-curses environments (e.g. Windows without windows-curses).
+Two interactive renderers over the same data (obliquity.core.explorer):
+
+* **curses** -- stdlib, zero-dependency; the default on macOS/Linux.
+* **textual** -- cross-platform, works natively on Windows; used when curses
+  isn't available (Windows without windows-curses) or when explicitly asked.
+
+Both are imported lazily so neither is pulled in unless it's actually used, and
+there's a plain-text fallback for non-TTY / neither-available environments.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import platform
 import sys
 
 from obliquity.core.explorer import (
@@ -23,21 +29,68 @@ TITLE = "Obliquity Wordlist Explorer"
 HELP = "↑/↓ move  ·  PgUp/PgDn scroll details  ·  Home/End  ·  q quit"
 
 
-def run_explorer() -> None:
+def _has_module(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def choose_backend(prefer: str = "auto") -> str:
+    """Pick a TUI backend. Returns 'curses', 'textual', or 'text'.
+
+    Order per platform (auto):
+      * macOS/Linux: curses (stdlib) -> textual -> text
+      * Windows:     curses (only if windows-curses is installed) -> textual -> text
+    An explicit preference is honored when that backend is actually usable,
+    otherwise it degrades with the same order.
+    """
+    if not sys.stdout.isatty():
+        return "text"
+
+    curses_ok = _has_module("curses")
+    textual_ok = _has_module("textual")
+
+    if prefer == "curses" and curses_ok:
+        return "curses"
+    if prefer == "textual" and textual_ok:
+        return "textual"
+    if prefer == "text":
+        return "text"
+
+    # auto (or an unavailable explicit choice): prefer the zero-dependency
+    # curses on POSIX; on Windows curses usually isn't present, so Textual wins.
+    if platform.system() == "Windows":
+        if curses_ok:
+            return "curses"
+        if textual_ok:
+            return "textual"
+        return "text"
+    if curses_ok:
+        return "curses"
+    if textual_ok:
+        return "textual"
+    return "text"
+
+
+def run_explorer(prefer: str = "auto") -> None:
     gameplans = collect_gameplans()
     wordlists = collect_wordlists(gameplans)
 
-    try:
-        import curses  # noqa: F401
-    except ImportError:
-        _print_fallback(gameplans, wordlists, reason="curses is not available (on Windows: pip install windows-curses)")
-        return
-    if not sys.stdout.isatty():
-        _print_fallback(gameplans, wordlists, reason="not attached to an interactive terminal")
-        return
-
-    import curses
-    curses.wrapper(_main_loop, gameplans, wordlists)
+    backend = choose_backend(prefer)
+    if backend == "curses":
+        import curses
+        curses.wrapper(_main_loop, gameplans, wordlists)
+    elif backend == "textual":
+        _run_textual(gameplans, wordlists)
+    else:
+        if not sys.stdout.isatty():
+            reason = "not attached to an interactive terminal"
+        elif platform.system() == "Windows":
+            reason = "no TUI backend available -- install one with: pip install textual  (or: pip install windows-curses)"
+        else:
+            reason = "no TUI backend available -- install one with: pip install textual"
+        _print_fallback(gameplans, wordlists, reason=reason)
 
 
 def _build_rows(gameplans: list[GameplanRef], wordlists: list[WordlistRef]) -> list[tuple[str, object, str]]:
@@ -173,6 +226,69 @@ def _safe_add(stdscr, y, x, text, maxlen, attr=0) -> None:
         stdscr.addnstr(y, x, text, maxlen, attr)
     except Exception:
         pass  # curses raises at the bottom-right corner and on odd resizes; ignore
+
+
+# --- Textual backend (cross-platform; the Windows-friendly option) ----------
+
+def _run_textual(gameplans, wordlists) -> None:
+    """Textual renderer -- same data as the curses one. Imported lazily so
+    Textual is only required when this backend is actually chosen."""
+    from textual.app import App, ComposeResult
+    from textual.containers import Horizontal, VerticalScroll
+    from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
+
+    class Row(ListItem):
+        def __init__(self, label: str, kind: str, obj) -> None:
+            super().__init__(Label(label))
+            self.kind = kind
+            self.payload = obj
+
+    class ExplorerApp(App):
+        CSS = """
+        Horizontal { height: 1fr; }
+        #list { width: 40%; border-right: solid $panel; }
+        #detailwrap { width: 60%; padding: 0 1; }
+        Row.header { color: $accent; text-style: bold; }
+        """
+        BINDINGS = [("q", "quit", "Quit")]
+        TITLE = TITLE
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            items: list[ListItem] = []
+            items.append(Row(f"GAMEPLANS ({len(gameplans)})", "header", None))
+            for gp in gameplans:
+                items.append(Row(f"[{gp.tool}] {gp.name}", "gameplan", gp))
+            items.append(Row(f"WORDLISTS ({len(wordlists)})", "header", None))
+            for wl in wordlists:
+                items.append(Row(wl.name, "wordlist", wl))
+            for it in items:
+                if getattr(it, "kind", None) == "header":
+                    it.add_class("header")
+            with Horizontal():
+                yield ListView(*items, id="list")
+                with VerticalScroll(id="detailwrap"):
+                    yield Static("", id="detail")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            self.query_one("#list", ListView).focus()
+
+        def _render(self, row) -> None:
+            detail = self.query_one("#detail", Static)
+            if row is None or row.kind == "header":
+                detail.update("Select a gameplan or wordlist on the left.")
+                return
+            if row.kind == "gameplan":
+                lines = gameplan_detail_lines(row.payload)
+            else:
+                lines = wordlist_detail_lines(row.payload, wordlists)
+            detail.update("\n".join(lines))
+
+        def on_list_view_highlighted(self, event) -> None:  # Textual ListView.Highlighted
+            self._render(event.item)
+
+    ExplorerApp().run()
 
 
 def _print_fallback(gameplans, wordlists, *, reason: str) -> None:

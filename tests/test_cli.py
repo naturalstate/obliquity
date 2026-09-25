@@ -31,6 +31,22 @@ class HelpTests(TestCase):
 
         self.assertTrue(args.open_report)
 
+    def test_bare_tool_commands_list_gameplans(self) -> None:
+        from obliquity.cli import cmd_tool_gameplans
+        for tool in ("bust", "fuzz", "crack", "brute"):
+            args = build_parser().parse_args([tool])
+            self.assertIs(args.func, cmd_tool_gameplans)
+            self.assertEqual(args._tool, tool)
+
+    def test_tool_subcommands_still_dispatch(self) -> None:
+        from obliquity.cli import cmd_bust_run
+        args = build_parser().parse_args(["bust", "run", "demo"])
+        self.assertIs(args.func, cmd_bust_run)
+
+    def test_explore_backend_flag(self) -> None:
+        args = build_parser().parse_args(["explore", "--backend", "textual"])
+        self.assertEqual(args.backend, "textual")
+
     def test_archive_accepts_nonexistent_project_mode(self) -> None:
         args = build_parser().parse_args(
             ["project", "archive", "demo", "--yes", "--if-exists"]
