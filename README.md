@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -56,6 +56,7 @@ of four.
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
   - [`crack`: hash cracking](#crack-hash-cracking)
   - [`brute`: online login attacks](#brute-online-login-attacks)
+  - [Wordlist explorer (TUI)](#wordlist-explorer-tui)
   - [Wordlist setup](#wordlist-setup)
   - [Reports](#reports)
   - [Resume & scan history](#resume--scan-history)
@@ -550,6 +551,27 @@ obliquity doctor
 `doctor` checks `feroxbuster`, `ffuf`, `hashcat`, and `hydra` (core), plus
 `gobuster`/`wfuzz`/`john` (optional, for future alternate-tool support --
 see [Roadmap](#roadmap--future-features)).
+
+### Wordlist explorer (TUI)
+
+Not sure which wordlist a gameplan uses, or what's actually inside a list
+before you throw it at a target? The explorer is an interactive, scrollable
+browser over every built-in gameplan and every wordlist they reference (plus
+the download catalog):
+
+```bash
+obliquity explore
+```
+
+Scroll the left pane (`↑`/`↓`, `Home`/`End`); the right pane shows details for
+the highlighted item and scrolls with `PgUp`/`PgDn`; `q` quits. For a
+**wordlist** it shows length, size, whether entries already carry extensions
+(and which), a **head and tail sample**, its description and typical use, the
+**gameplan(s) that reference it**, and **similar wordlists**. For a
+**gameplan** it shows its stages, the wordlist each uses, and the exact run
+command. It needs an interactive terminal (curses); piped or on Windows
+without `windows-curses` it prints a plain overview instead. To inspect a
+single list non-interactively, use [`wordlists inspect`](#bust-content-discovery).
 
 ### Wordlist setup
 

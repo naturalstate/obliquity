@@ -683,6 +683,24 @@ matches (documented by a new test).
 - (See entry #25 area for the hydra-in-reports and response-filter work landed
   the same day.) 121 tests, all green.
 
+### 27. Wordlist Explorer (interactive TUI) (2026-09-24)
+
+- **`obliquity explore`** -- a curses TUI added to the main menu. Left pane
+  scrolls through every built-in gameplan (all four pillars) and every wordlist
+  they reference plus the download catalog; the right pane shows details for the
+  highlighted item and scrolls independently. Wordlist details: length, size,
+  extension detection (+ most common), head **and** tail sample (tail read from
+  the end so raft-large-sized lists don't get fully loaded), description/typical
+  use, the gameplan(s) that reference it, and similar wordlists (shared name
+  stem or category). Gameplan details: stages, each stage's wordlist, and the
+  exact run command.
+- Data layer is a separate, dependency-free, testable module
+  (`core/explorer.py`); the curses renderer (`explorer_tui.py`) is lazy-imported
+  so curses only loads when the command runs. Non-TTY / no-curses (Windows
+  without `windows-curses`) falls back to a plain printed overview. Keeps the
+  core stdlib-only (no Textual dependency). Keys: arrows/j/k, PgUp/PgDn,
+  Home/End, q. 7 new tests (128 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

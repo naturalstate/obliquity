@@ -1809,6 +1809,12 @@ def cmd_report_markdown(args) -> None:
     kv("Report written", output)
 
 
+def cmd_explore(args) -> None:
+    # Lazy import so curses is only pulled in when the explorer actually runs.
+    from obliquity.explorer_tui import run_explorer
+    run_explorer()
+
+
 def cmd_runs(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
@@ -1992,6 +1998,19 @@ for detailed options and examples. Only test systems you are authorized to asses
     coverage.add_argument("project", nargs="?")
     coverage.add_argument("url", nargs="?")
     coverage.set_defaults(func=cmd_coverage)
+
+    explore = sub.add_parser(
+        "explore",
+        help="wordlist explorer -- interactive TUI to browse gameplans and wordlists",
+        description="Interactive Wordlist Explorer. Scroll through every built-in gameplan "
+        "and every referenced/catalog wordlist; the detail pane shows length, size, whether "
+        "it carries extensions, a head/tail sample, description and typical use, which "
+        "gameplan(s) reference it, and similar wordlists. Falls back to a plain listing when "
+        "there is no interactive terminal.",
+        epilog="example:\n  obliquity explore",
+        formatter_class=formatter,
+    )
+    explore.set_defaults(func=cmd_explore)
 
     gameplans = sub.add_parser("gameplans", help="inspect built-in scan gameplans")
     gameplans_sub = gameplans.add_subparsers(dest="gameplans_cmd", required=True)
