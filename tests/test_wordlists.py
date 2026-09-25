@@ -27,6 +27,24 @@ class CatalogSanityTests(TestCase):
     def test_catalog_by_name_returns_none_for_unknown(self) -> None:
         self.assertIsNone(catalog_by_name("not-a-real-entry"))
 
+    def test_all_urls_are_https(self) -> None:
+        for entry in WORDLIST_CATALOG:
+            self.assertTrue(entry.url.startswith("https://"), entry.name)
+
+    def test_match_suffixes_are_unique(self) -> None:
+        suffixes = [entry.match_suffix for entry in WORDLIST_CATALOG]
+        self.assertEqual(len(suffixes), len(set(suffixes)))
+
+    def test_assetnote_entries_present_and_dated_url_matches_snapshot(self) -> None:
+        from obliquity.core.wordlists import ASSETNOTE_SNAPSHOT
+        assetnote = [e for e in WORDLIST_CATALOG if e.name.startswith("assetnote-")]
+        self.assertGreaterEqual(len(assetnote), 7)
+        params = catalog_by_name("assetnote-parameters")
+        self.assertIsNotNone(params)
+        # the dated httparchive URL must use the single snapshot constant
+        self.assertIn(ASSETNOTE_SNAPSHOT, params.url)
+        self.assertIn("wordlists-cdn.assetnote.io", params.url)
+
 
 class _FakeResponse:
     def __init__(self, data: bytes):

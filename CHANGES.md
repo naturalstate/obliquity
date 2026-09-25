@@ -815,6 +815,28 @@ matches (documented by a new test).
   default > **service profile default** > `quick`. `--port` always overrides.
 - 2 new tests (142 total, all green).
 
+### 34. Assetnote wordlists added to the catalog (first batch) (2026-09-25)
+
+- Added **7 Assetnote entries** (wordlists.assetnote.io) as downloadable catalog
+  items, ~3 per usable section:
+  - **manual**: `assetnote-raft-large-directories`, `assetnote-raft-large-files`,
+    `assetnote-bak` (stable filenames).
+  - **automated (HTTP Archive)**: `assetnote-parameters` (top-1M parameter
+    names -- ideal for fuzz), `assetnote-api-routes`, `assetnote-directories`.
+    These are monthly snapshots; the date lives in one `ASSETNOTE_SNAPSHOT`
+    constant to bump.
+  - **kiterunner**: `assetnote-swagger` (the `.kite.tar.gz` route DBs are
+    skipped -- they need the kiterunner tool, not a plain wordlist).
+- The **technologies** section (per-framework path lists) is documented in
+  EXTERNAL_SOURCES with the bulk-download command, but not added as entries yet
+  (large, host-mapping-oriented, and exact dated filenames need confirming when
+  the CDN is reachable).
+- Filenames are taken from Assetnote's real directory index. **Live download
+  verification was not possible at commit time** -- the assetnote CDN origin
+  was returning HTTP 522 to all direct requests -- so `wordlists install` for
+  these should be spot-checked once the CDN recovers.
+- 3 new catalog tests (145 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

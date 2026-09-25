@@ -27,6 +27,12 @@ class WordlistEntry:
     archive_member: str | None = None
 
 
+# Assetnote's httparchive_* wordlists are regenerated monthly and their
+# filenames carry the snapshot date. Bump this to pull a newer snapshot (the
+# latest date is listed at https://wordlists.assetnote.io/).
+ASSETNOTE_SNAPSHOT = "2026_08_27"
+
+
 # A curated set of the wordlists Obliquity's own built-in profiles reference,
 # plus a few other well-known ones. Not an attempt to mirror all of SecLists --
 # see EXTERNAL_SOURCES below for pointers to the larger catalogs.
@@ -96,13 +102,73 @@ WORDLIST_CATALOG: list[WordlistEntry] = [
         url="https://raw.githubusercontent.com/stealthsploit/OneRuleToRuleThemStill/main/OneRuleToRuleThemStill.rule",
         match_suffix="hashcat/rules/OneRuleToRuleThemStill.rule",
     ),
+    # --- Assetnote wordlists (wordlists.assetnote.io) -----------------------
+    # A first batch, ~3 per section; the rest can be added over time. The
+    # httparchive_* files are regenerated monthly, so their filename carries a
+    # date -- bump ASSETNOTE_SNAPSHOT below to refresh to a newer snapshot.
+    # Section: manual (stable filenames)
+    WordlistEntry(
+        name="assetnote-raft-large-directories",
+        description="Assetnote manual raft-large-directories (canonical raft source; ~62k dirs)",
+        category="bust",
+        url="https://wordlists-cdn.assetnote.io/data/manual/raft-large-directories.txt",
+        match_suffix="assetnote/raft-large-directories.txt",
+    ),
+    WordlistEntry(
+        name="assetnote-raft-large-files",
+        description="Assetnote manual raft-large-files (file names for content discovery)",
+        category="bust",
+        url="https://wordlists-cdn.assetnote.io/data/manual/raft-large-files.txt",
+        match_suffix="assetnote/raft-large-files.txt",
+    ),
+    WordlistEntry(
+        name="assetnote-bak",
+        description="Assetnote manual bak.txt -- backup/old file names",
+        category="bust",
+        url="https://wordlists-cdn.assetnote.io/data/manual/bak.txt",
+        match_suffix="assetnote/bak.txt",
+    ),
+    # Section: automated (HTTP Archive, monthly-dated -- see ASSETNOTE_SNAPSHOT)
+    WordlistEntry(
+        name="assetnote-parameters",
+        description=f"Assetnote httparchive top-1M parameter names ({ASSETNOTE_SNAPSHOT}) -- ideal for fuzz",
+        category="fuzz",
+        url=f"https://wordlists-cdn.assetnote.io/data/automated/httparchive_parameters_top_1m_{ASSETNOTE_SNAPSHOT}.txt",
+        match_suffix="assetnote/httparchive_parameters_top_1m.txt",
+    ),
+    WordlistEntry(
+        name="assetnote-api-routes",
+        description=f"Assetnote httparchive API routes ({ASSETNOTE_SNAPSHOT}) -- API endpoint discovery",
+        category="fuzz",
+        url=f"https://wordlists-cdn.assetnote.io/data/automated/httparchive_apiroutes_{ASSETNOTE_SNAPSHOT}.txt",
+        match_suffix="assetnote/httparchive_apiroutes.txt",
+    ),
+    WordlistEntry(
+        name="assetnote-directories",
+        description=f"Assetnote httparchive top-1M directories ({ASSETNOTE_SNAPSHOT}) -- large real-world dir list",
+        category="bust",
+        url=f"https://wordlists-cdn.assetnote.io/data/automated/httparchive_directories_1m_{ASSETNOTE_SNAPSHOT}.txt",
+        match_suffix="assetnote/httparchive_directories_1m.txt",
+    ),
+    # Section: kiterunner (only the plain swagger list is usable without the
+    # kiterunner tool; the .kite.tar.gz route DBs need kiterunner itself)
+    WordlistEntry(
+        name="assetnote-swagger",
+        description="Assetnote kiterunner swagger-wordlist -- OpenAPI/Swagger endpoint names",
+        category="bust",
+        url="https://wordlists-cdn.assetnote.io/data/kiterunner/swagger-wordlist.txt",
+        match_suffix="assetnote/swagger-wordlist.txt",
+    ),
 ]
 
 # Larger/technology-specific collections that don't fit a single well-known
 # file well enough to auto-install. Surfaced as links, not downloaded.
 EXTERNAL_SOURCES = [
     ("Full SecLists repository", "https://github.com/danielmiessler/SecLists"),
-    ("Assetnote technology-specific wordlists", "https://wordlists.assetnote.io/"),
+    ("Assetnote wordlists (catalog has a starter set; browse the rest)", "https://wordlists.assetnote.io/"),
+    ("Assetnote technology-specific lists (per-framework paths; large)", "https://wordlists-cdn.assetnote.io/data/technologies/"),
+    ("Grab every Assetnote list at once",
+     "wget -r --no-parent -R 'index.html*' https://wordlists-cdn.assetnote.io/data/ -nH -e robots=off"),
 ]
 
 
