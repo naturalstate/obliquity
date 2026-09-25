@@ -75,7 +75,12 @@ from obliquity.core.loginplan import (
     list_builtin_loginplans,
     load_loginplan,
 )
-from obliquity.adapters.hydra import FORM_SERVICES, KNOWN_SERVICES
+from obliquity.adapters.hydra import (
+    FORM_SERVICES,
+    KNOWN_SERVICES,
+    service_default_loginplan,
+    service_default_port,
+)
 from obliquity.core.gameplan import extension_conflicts, find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
@@ -1733,9 +1738,18 @@ def cmd_brute_job_add(args) -> None:
     if not target:
         die("provide a target (hostname/IP), or --host <url> to seed it from a project host")
 
+    # Service profile: auto-fill the standard port for non-form services when
+    # the user didn't give one (form services carry the port in the URL).
+    port = args.port
+    port_note = None
+    if port is None and args.service not in FORM_SERVICES:
+        port = service_default_port(args.service)
+        if port is not None:
+            port_note = f"default port for {args.service}"
+
     job = add_login_job(
         conn, project["id"], service=args.service, target=target, name=args.name,
-        host_id=host_id, port=args.port, form_spec=args.form_spec,
+        host_id=host_id, port=port, form_spec=args.form_spec,
         module_args=args.module_args, notes=args.notes,
     )
     section("Login job added", "green")
@@ -1744,9 +1758,12 @@ def cmd_brute_job_add(args) -> None:
     kv("Service", job["service"])
     kv("Target", job["target"])
     if job["port"]:
-        kv("Port", job["port"])
+        kv("Port", f"{job['port']}  ({port_note})" if port_note else job["port"])
     if job["form_spec"]:
         kv("Form spec", job["form_spec"])
+    default_plan = service_default_loginplan(args.service)
+    if default_plan:
+        kv("Default loginplan", f"{default_plan}  (used by 'brute run' unless overridden)", color="gray")
 
 
 def cmd_brute_job_list(args) -> None:
@@ -1881,13 +1898,25 @@ def normalize_login_run_target(conn, args) -> None:
         args.project = None
 
 
+def _brute_plan_name(project, job, args) -> str:
+    """Loginplan precedence for brute: explicit --gameplan > project default >
+    the job's service profile default (ssh->ssh-default, ftp->ftp-default,
+    ...) > 'quick'."""
+    return (
+        args.gameplan
+        or project["default_bruteplan"]
+        or service_default_loginplan(job["service"])
+        or "quick"
+    )
+
+
 def cmd_brute_plan(args) -> None:
     conn = connect(DB_PATH)
     normalize_login_run_target(conn, args)
     project = resolve_project(conn, args)
     apply_stored_options(conn, project, "brute", args)
     job = require_login_job(conn, project, args.job)
-    plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
+    plan = resolve_loginplan(_brute_plan_name(project, job, args))
     print_loginplan_summary(project, job, plan, mode="Plan Preview", args=args)
 
 
@@ -1897,7 +1926,7 @@ def cmd_brute_run(args) -> None:
     project = resolve_project(conn, args)
     apply_stored_options(conn, project, "brute", args)
     job = require_login_job(conn, project, args.job)
-    plan = resolve_loginplan(args.gameplan or project["default_bruteplan"] or "quick")
+    plan = resolve_loginplan(_brute_plan_name(project, job, args))
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
     print_loginplan_summary(project, job, plan, mode=mode, args=args)

@@ -1,0 +1,7 @@
+{
+  "name": "smb-default",
+  "description": "SMB-tuned first pass: Windows-style usernames (administrator/guest/service) against a small common-password list. Low parallelism to avoid lockouts. Stops on first valid.",
+  "stages": [
+    {"name": "smb-common", "userlist": "smb-users.txt", "passlist": "passwords-common.txt", "tasks": 2, "stop_on_first_valid": true}
+  ]
+}

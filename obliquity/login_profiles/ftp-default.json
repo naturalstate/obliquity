@@ -1,0 +1,7 @@
+{
+  "name": "ftp-default",
+  "description": "FTP-tuned first pass: anonymous/ftp/admin-style usernames against a small common-password list. Stops on first valid.",
+  "stages": [
+    {"name": "ftp-common", "userlist": "ftp-users.txt", "passlist": "passwords-common.txt", "tasks": 4, "stop_on_first_valid": true}
+  ]
+}

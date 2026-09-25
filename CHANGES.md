@@ -799,6 +799,22 @@ matches (documented by a new test).
 - Single source: `obliquity/manual.py` `SECTIONS` drives both. 3 new tests
   (140 total, all green).
 
+### 33. Hydra service profiles: per-service ports, plans, and lists (2026-09-25)
+
+- **`SERVICE_PROFILES`** in the hydra adapter maps each service to a standard
+  port + a recommended loginplan. `brute job add --service ftp` now auto-fills
+  port 21 (ssh→22, smb→445, rdp→3389, mysql→3306, …) when `--port` is omitted
+  (form services skip this -- their port is in the URL), and shows the default
+  loginplan it'll use.
+- **Service-tuned loginplans** `ssh-default` / `ftp-default` / `smb-default`
+  with bundled, service-appropriate username lists (`ssh-users.txt` root/admin/
+  service accounts; `ftp-users.txt` anonymous/ftp/admin; `smb-users.txt`
+  administrator/guest -- lower `-t` to avoid AD lockouts) against a small
+  bundled `passwords-common.txt`. Dependency-free (no SecLists needed).
+- **`brute run` loginplan precedence** is now explicit `--gameplan` > project
+  default > **service profile default** > `quick`. `--port` always overrides.
+- 2 new tests (142 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

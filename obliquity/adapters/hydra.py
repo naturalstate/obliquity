@@ -17,6 +17,48 @@ KNOWN_SERVICES = FORM_SERVICES | {
 }
 
 
+# Per-service defaults: standard port + a recommended built-in loginplan (which
+# in turn points at service-appropriate user/pass lists). Applied when a user
+# adds a login job / runs without specifying a port or gameplan. Non-form
+# services get an auto-filled port; form services carry the port in the URL.
+SERVICE_PROFILES = {
+    "ssh": {"port": 22, "loginplan": "ssh-default"},
+    "ftp": {"port": 21, "loginplan": "ftp-default"},
+    "ftps": {"port": 990, "loginplan": "ftp-default"},
+    "smb": {"port": 445, "loginplan": "smb-default"},
+    "rdp": {"port": 3389, "loginplan": "common-creds"},
+    "telnet": {"port": 23, "loginplan": "common-creds"},
+    "mysql": {"port": 3306, "loginplan": "common-creds"},
+    "postgres": {"port": 5432, "loginplan": "common-creds"},
+    "mssql": {"port": 1433, "loginplan": "common-creds"},
+    "vnc": {"port": 5900, "loginplan": "common-creds"},
+    "smtp": {"port": 25, "loginplan": "common-creds"},
+    "pop3": {"port": 110, "loginplan": "common-creds"},
+    "imap": {"port": 143, "loginplan": "common-creds"},
+    "ldap2": {"port": 389, "loginplan": "common-creds"},
+    "ldap3": {"port": 389, "loginplan": "common-creds"},
+    "redis": {"port": 6379, "loginplan": "common-creds"},
+    "rlogin": {"port": 513, "loginplan": "common-creds"},
+    "snmp": {"port": 161, "loginplan": "common-creds"},
+    "http-get": {"port": 80, "loginplan": "common-creds"},
+    "http-post": {"port": 80, "loginplan": "common-creds"},
+    "http-get-form": {"port": 80, "loginplan": "common-creds"},
+    "http-post-form": {"port": 80, "loginplan": "common-creds"},
+    "https-get-form": {"port": 443, "loginplan": "common-creds"},
+    "https-post-form": {"port": 443, "loginplan": "common-creds"},
+}
+
+
+def service_default_port(service: str) -> int | None:
+    prof = SERVICE_PROFILES.get(service)
+    return prof["port"] if prof else None
+
+
+def service_default_loginplan(service: str) -> str | None:
+    prof = SERVICE_PROFILES.get(service)
+    return prof["loginplan"] if prof else None
+
+
 class HydraMissing(RuntimeError):
     pass
 

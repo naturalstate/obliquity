@@ -1,0 +1,12 @@
+anonymous
+ftp
+admin
+root
+user
+test
+www
+upload
+webmaster
+backup
+ftpuser
+guest

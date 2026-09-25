@@ -1,0 +1,15 @@
+root
+admin
+administrator
+user
+test
+ubuntu
+debian
+pi
+oracle
+git
+deploy
+jenkins
+postgres
+vagrant
+ftpuser

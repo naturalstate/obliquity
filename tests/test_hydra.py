@@ -96,6 +96,25 @@ class ParseOutputTests(TestCase):
         self.assertEqual(creds, [])
 
 
+class ServiceProfileTests(TestCase):
+    def test_default_ports(self):
+        from obliquity.adapters.hydra import service_default_port
+        self.assertEqual(service_default_port("ssh"), 22)
+        self.assertEqual(service_default_port("ftp"), 21)
+        self.assertEqual(service_default_port("smb"), 445)
+        self.assertEqual(service_default_port("rdp"), 3389)
+        self.assertIsNone(service_default_port("carrier-pigeon"))
+
+    def test_default_loginplans_exist(self):
+        from obliquity.adapters.hydra import service_default_loginplan
+        from obliquity.core.loginplan import find_builtin_loginplan, load_loginplan
+        for service in ("ssh", "ftp", "smb"):
+            name = service_default_loginplan(service)
+            self.assertTrue(name)
+            plan = load_loginplan(find_builtin_loginplan(name))  # must resolve + load
+            self.assertTrue(plan.stages)
+
+
 class LoginPlanTests(TestCase):
     def test_stage_requires_user_and_pass(self) -> None:
         with self.assertRaises(ValueError):

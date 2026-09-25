@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-142%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -572,6 +572,16 @@ obliquity brute run ssh-box --gameplan common-creds
 # Review what was recovered
 obliquity brute creds acme
 ```
+
+**Service profiles**: each service carries sensible defaults, so a job needs
+almost nothing. Adding a job auto-fills the **standard port** (ssh→22, ftp→21,
+smb→445, rdp→3389, mysql→3306, …) when you don't pass `--port`, and `brute run`
+picks a **service-tuned loginplan** when you don't pass `--gameplan`:
+`ssh-default`, `ftp-default`, and `smb-default` use service-appropriate
+username lists (root/admin vs anonymous/ftp vs administrator/guest) against a
+small common-password list; other services fall back to `common-creds`.
+Precedence stays **explicit `--gameplan` > project default > service default >
+`quick`**, and `--port` always overrides.
 
 > **Authorization required.** hydra performs live credential guessing. Only
 > run it against systems you're explicitly authorized to test. Online

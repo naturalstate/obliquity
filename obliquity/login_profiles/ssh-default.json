@@ -1,0 +1,7 @@
+{
+  "name": "ssh-default",
+  "description": "SSH-tuned first pass: common SSH usernames (root/admin/service accounts) against a small common-password list. Conservative parallelism; stops on first valid.",
+  "stages": [
+    {"name": "ssh-common", "userlist": "ssh-users.txt", "passlist": "passwords-common.txt", "tasks": 4, "stop_on_first_valid": true}
+  ]
+}

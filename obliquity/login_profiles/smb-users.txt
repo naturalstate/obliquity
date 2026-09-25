@@ -1,0 +1,12 @@
+administrator
+admin
+guest
+user
+backup
+sql
+sqladmin
+service
+helpdesk
+test
+support
+operator
