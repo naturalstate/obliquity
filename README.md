@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-145%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-151%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -442,6 +442,21 @@ obliquity bust run acme --filter-status 404,500 --filter-size 0 --filter-regex '
 
 A run with different filters is fingerprinted as a distinct run, so tightening
 filters doesn't collide with an earlier, noisier scan.
+
+**Flood detection (wildcard / soft-404)**: some hosts answer *every* path with
+`200` (a wildcard or soft-404), which floods a scan with junk. During a run
+Obliquity watches the live results, and if one status code dominates past a
+threshold it **stops that stage mid-run** and offers to re-run it with that
+status filtered out, then continue:
+
+```text
+  ! Flood detected: status 200 returned 400/400 matches -- likely a wildcard / soft-404.
+    Re-run this stage excluding status 200 and continue? [Y/n]
+```
+
+Tune or disable it with `--flood-threshold N` (default 250; the re-run is a
+distinct, fingerprinted run) or `--no-flood-guard`. In non-interactive runs it
+auto-re-runs filtered and says so.
 
 **Extension Intelligence**: appending extensions to a wordlist that *already*
 contains them (`index.php` + `.php` -> `index.php.php`) just wastes requests.

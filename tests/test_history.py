@@ -18,7 +18,7 @@ class HistoryTests(TestCase):
             host = add_host(conn, project["id"], "https://example.com")
             gameplan = Gameplan(name="plan", description="", stages=[Stage(name="only", wordlist="words.txt")])
 
-            def fake_run(command, raw_output, progress_callback):
+            def fake_run(command, raw_output, progress_callback, abort_check=None):
                 output = Path(command[command.index("--output") + 1])
                 output.write_text(json.dumps({"url": "https://example.com/admin", "status": 200}) + "\n")
                 return 0, None

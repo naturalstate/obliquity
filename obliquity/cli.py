@@ -571,7 +571,13 @@ def print_run_event(event: dict) -> None:
         wl = Path(event.get("wordlist") or "").name
         exts = event.get("extensions") or []
         extbit = c(f"  +{fmt_list(exts)}", "gray") if exts else ""
-        print(c(f"  > {n}", "green", bold=True) + c(f"   {wl}", "cyan") + extbit)
+        retry = c("  (re-run, filtered)", "yellow") if event.get("retry") else ""
+        print(c(f"  > {n}", "green", bold=True) + c(f"   {wl}", "cyan") + extbit + retry)
+        return
+
+    if action == "reflood":
+        print(c(f"  ~ {n}  re-running with status {event.get('status')} filtered "
+                f"({event.get('count')}/{event.get('total')} were {event.get('status')})", "yellow"))
         return
 
     if action == "progress":
@@ -1570,6 +1576,24 @@ def cmd_bust_plan(args) -> None:
     print_gameplan_summary(project, host, gameplan, mode="Plan Preview", args=args, recommended_reason=reason)
 
 
+def bust_flood_prompt(info: dict) -> bool:
+    """Called mid-run when a status-code flood is detected. Returns True to
+    re-run the stage with that status filtered out and continue."""
+    _clear_progress_line()
+    code, n, total = info.get("status"), info.get("count"), info.get("total")
+    print(c(f"  ! Flood detected: status {code} returned {n}/{total} matches "
+            f"-- likely a wildcard / soft-404 (the host answers everything alike).", "yellow", bold=True))
+    if sys.stdin.isatty():
+        try:
+            ans = input(c(f"    Re-run this stage excluding status {code} and continue? [Y/n] ", "yellow")).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        return ans in ("", "y", "yes")
+    print(c(f"    (non-interactive) re-running with status {code} filtered out.", "gray"))
+    return True
+
+
 def cmd_bust_run(args) -> None:
     conn = connect(DB_PATH)
     normalize_host_target(args)
@@ -1587,6 +1611,7 @@ def cmd_bust_run(args) -> None:
     print_gameplan_summary(project, host, gameplan, mode=mode, args=args, recommended_reason=reason)
 
     section("Execution", "cyan")
+    flood_threshold = 0 if getattr(args, "no_flood_guard", False) else getattr(args, "flood_threshold", 0)
     results = run_gameplan(
         conn,
         project,
@@ -1597,6 +1622,8 @@ def cmd_bust_run(args) -> None:
         rate_limit=args.rate_limit,
         threads=args.threads,
         proxy=args.proxy,
+        flood_threshold=flood_threshold,
+        flood_prompt=bust_flood_prompt,
         headers=args.header or [],
         event_callback=print_run_event,
     )
@@ -2488,6 +2515,9 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_scan_args.add_argument("--filter-words", help="drop responses with these word counts (feroxbuster -W)")
     bust_scan_args.add_argument("--filter-lines", help="drop responses with these line counts (feroxbuster -N)")
     bust_scan_args.add_argument("--filter-regex", help="drop responses whose body matches this regex (feroxbuster -X)")
+    bust_scan_args.add_argument("--flood-threshold", type=int, default=250, metavar="N",
+                                help="abort a stage mid-run if one status code floods past N matches (wildcard/soft-404) and offer to re-run filtered (default: 250)")
+    bust_scan_args.add_argument("--no-flood-guard", action="store_true", help="disable mid-run flood detection")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

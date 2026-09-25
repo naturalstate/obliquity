@@ -28,7 +28,7 @@ class ResumeTests(TestCase):
 
             calls = 0
 
-            def interrupt_second_stage(command, raw_output, progress_callback):
+            def interrupt_second_stage(command, raw_output, progress_callback, abort_check=None):
                 nonlocal calls
                 calls += 1
                 if calls == 1:

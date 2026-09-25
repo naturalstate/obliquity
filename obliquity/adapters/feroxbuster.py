@@ -102,19 +102,33 @@ def terminate_process(proc: subprocess.Popen) -> None:
         proc.wait()
 
 
+# Returned when abort_check stops the process mid-run (e.g. a status-code flood
+# / wildcard). Distinct from feroxbuster's own exit codes so callers can tell.
+FLOOD_ABORT_EXIT = 141
+
+
 def run_command(
     cmd: list[str],
     raw_output: Path,
     progress_callback: ProgressCallback | None = None,
+    abort_check: Callable[[float], str | None] | None = None,
 ) -> tuple[int, str | None]:
+    """Run feroxbuster. If `abort_check(elapsed)` returns a reason string mid-run,
+    the process is terminated and (FLOOD_ABORT_EXIT, reason) is returned."""
     raw_output.parent.mkdir(parents=True, exist_ok=True)
     with raw_output.open("w", encoding="utf-8", errors="replace") as handle:
         proc = subprocess.Popen(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True)
         started = time.monotonic()
         try:
             while proc.poll() is None:
+                elapsed = time.monotonic() - started
                 if progress_callback:
-                    progress_callback(time.monotonic() - started)
+                    progress_callback(elapsed)
+                if abort_check is not None:
+                    reason = abort_check(elapsed)
+                    if reason:
+                        terminate_process(proc)
+                        return FLOOD_ABORT_EXIT, reason
                 time.sleep(0.1)
         except KeyboardInterrupt:
             terminate_process(proc)

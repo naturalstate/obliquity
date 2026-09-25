@@ -837,6 +837,23 @@ matches (documented by a new test).
   these should be spot-checked once the CDN recovers.
 - 3 new catalog tests (145 total, all green).
 
+### 35. Bust mid-run flood detection + re-run filtered (2026-09-25)
+
+- **Wildcard / soft-404 guard**: during a bust run, Obliquity tails feroxbuster's
+  live JSONL output and, if one status code dominates past a threshold (default
+  250 matches and >=85% of everything seen), **terminates the stage mid-run**
+  and offers to re-run it with that status filtered out (`--filter-status`),
+  then continue. The re-run changes the stage fingerprint, so it's tracked as
+  its own run. `--flood-threshold N` (0 disables) and `--no-flood-guard` control
+  it; non-interactive runs auto-re-run filtered and log it.
+- Plumbing: `run_command` gained an optional `abort_check(elapsed)->reason`
+  that terminates the process and returns `FLOOD_ABORT_EXIT`; `runner.py` adds
+  `live_status_tally` + `make_flood_detector` and a per-stage retry loop (at
+  most one filtered re-run). Partial findings from the aborted attempt are still
+  recorded.
+- 6 new tests (151 total, all green). Verified end-to-end against a fake
+  feroxbuster that floods 200s then returns clean results once filtered.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

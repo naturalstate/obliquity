@@ -12,7 +12,7 @@ from obliquity.core.runner import run_gameplan
 
 
 def _run_to_completion(conn, project, host, gameplan) -> None:
-    def fake_run(command, raw_output, progress_callback):
+    def fake_run(command, raw_output, progress_callback, abort_check=None):
         output = Path(command[command.index("--output") + 1])
         output.write_text(json.dumps({"url": host["url"] + "/x", "status": 200}) + "\n")
         return 0, None
