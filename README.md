@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -207,6 +207,15 @@ go install github.com/ffuf/ffuf/v2@latest   # or grab a prebuilt binary from ffu
 ```bash
 sudo pacman -S feroxbuster hashcat hydra
 go install github.com/ffuf/ffuf/v2@latest   # ffuf: via Go, or the AUR (yay -S ffuf)
+```
+
+**The manual:** `obliquity manual` prints the full command reference in the
+terminal on any platform (pipe to a pager: `obliquity manual | less -R`). On
+Linux/macOS you can also install the man page for `man obliquity`:
+
+```bash
+man ./docs/obliquity.1                                  # view without installing
+sudo install -Dm644 docs/obliquity.1 /usr/local/share/man/man1/obliquity.1   # install
 ```
 
 **Any platform, no package manager:** feroxbuster/ffuf/hashcat ship prebuilt

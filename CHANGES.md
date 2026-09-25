@@ -786,6 +786,19 @@ matches (documented by a new test).
 - **Phase 2 (interactive `obliquity console` REPL over this same state) is
   recommended but not yet built.**
 
+### 32. `obliquity manual` + man page, hydra install docs (2026-09-25)
+
+- **hydra added to the install instructions** (was missing): macOS/apt/dnf/
+  pacman commands, a WSL note for Windows, from-source pointer.
+- **`obliquity manual`** prints the full command reference in-terminal on any
+  platform (Windows included) -- every command with an example, in the app's
+  colors. `obliquity manual | less -R` to page it.
+- **Man page** at `docs/obliquity.1` for `man obliquity` on Linux/macOS,
+  **generated from the same source** as the in-terminal manual
+  (`manual.render_manpage()`) so they never drift; README documents install.
+- Single source: `obliquity/manual.py` `SECTIONS` drives both. 3 new tests
+  (140 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

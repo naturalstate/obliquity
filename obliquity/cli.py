@@ -2030,6 +2030,11 @@ def cmd_report_markdown(args) -> None:
     kv("Report written", output)
 
 
+def cmd_manual(args) -> None:
+    from obliquity.manual import print_manual
+    print_manual()
+
+
 def cmd_explore(args) -> None:
     # Lazy import so a TUI backend is only pulled in when the explorer runs.
     from obliquity.explorer_tui import run_explorer
@@ -2178,6 +2183,15 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
     doctor.set_defaults(func=cmd_doctor)
+
+    manual = sub.add_parser(
+        "manual", help="show the full Obliquity manual (all commands, reformatted)",
+        description="Print the complete Obliquity manual in the terminal -- every command with an "
+        "example. Works on all platforms; pipe to a pager for scrolling (e.g. 'obliquity manual | less -R'). "
+        "On Linux/macOS you can also install the man page for 'man obliquity' (see the README).",
+        formatter_class=formatter, epilog="example:\n  obliquity manual",
+    )
+    manual.set_defaults(func=cmd_manual)
 
     # --- Metasploit-style stateful options (set / unset / options) ---
     _tool_choices = ["bust", "fuzz", "crack", "brute"]

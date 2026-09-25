@@ -1,0 +1,148 @@
+.TH OBLIQUITY 1 "" "Obliquity" "Obliquity Manual"
+.SH NAME
+obliquity \- staged orchestration of feroxbuster, ffuf, hashcat, and thc-hydra
+.SH SYNOPSIS
+.B obliquity
+.I command
+[options]
+.SH DESCRIPTION
+Obliquity is a CLI that orchestrates penetration\-testing tools in four pillars \-\- bust (feroxbuster), fuzz (ffuf), crack (hashcat), brute (thc\-hydra) \-\- with projects, staged gameplans, resume, and unified reporting. Each pillar only needs its own tool installed.
+.SH OVERVIEW
+.TP
+.B obliquity <command> \-\-help
+detailed help for any command
+.TP
+.B obliquity doctor
+check that feroxbuster/ffuf/hashcat/hydra are installed
+.SH PROJECTS & HOSTS
+One project groups many hosts/jobs, results, and settings.
+.TP
+.B obliquity project create acme
+create a project
+.TP
+.B obliquity project use acme
+make it the active project (so you can omit its name)
+.TP
+.B obliquity project list
+list projects with host/job/run counts
+.TP
+.B obliquity project current
+show the active project: hosts, metadata, per\-tool gameplans, options
+.TP
+.B obliquity project unset
+clear the active project
+.TP
+.B obliquity project archive acme \-\-yes
+back up files + drop the DB record
+.TP
+.B obliquity project delete acme \-\-yes
+permanently delete (no backup)
+.TP
+.B obliquity host add acme https://app.acme.test \-\-tech php \-\-server apache
+add a host with metadata
+.TP
+.B obliquity host list acme
+list a project's hosts
+.SH STATEFUL OPTIONS (METASPLOIT\-STYLE)
+Set options once, then run with no flags. Flags still override.
+.TP
+.B obliquity set fuzz endpoint /search
+store an option on the active project
+.TP
+.B obliquity options fuzz
+show a tool's options (OPTION/VALUE/REQUIRED/SOURCE)
+.TP
+.B obliquity unset fuzz endpoint
+clear one option
+.TP
+.B obliquity project set\-gameplan bust generic\-deep
+set the default gameplan for a tool
+.SH BUST \-\- CONTENT DISCOVERY (FEROXBUSTER)
+Staged directory/file discovery.
+.TP
+.B obliquity bust
+list bust gameplans
+.TP
+.B obliquity bust run acme \-\-gameplan generic\-quick
+run (host optional if only one)
+.TP
+.B obliquity bust run acme \-\-depth 3
+override recursion depth
+.TP
+.B obliquity bust run acme \-\-filter\-status 404,500
+drop noisy status codes
+.TP
+.B obliquity bust plan acme \-\-gameplan aspnet\-standard \-\-dry\-run
+preview the exact commands
+.TP
+.B obliquity bust resume acme
+skip completed stages, retry the rest
+.SH FUZZ \-\- PARAMETER/API FUZZING (FFUF)
+Fuzz parameter names/values or a raw request.
+.TP
+.B obliquity fuzz
+list fuzz gameplans
+.TP
+.B obliquity fuzz run acme \-\-gameplan parameter\-names\-quick \-\-endpoint /search
+fuzz parameter names
+.TP
+.B obliquity fuzz run acme \-\-gameplan parameter\-values\-quick \-\-template '/search?q=FUZZ'
+fuzz a value
+.TP
+.B obliquity fuzz run acme \-\-gameplan api\-request\-quick \-\-request req.txt
+fuzz inside a raw request
+.SH CRACK \-\- OFFLINE HASH CRACKING (HASHCAT)
+Staged password cracking against a hash file.
+.TP
+.B obliquity crack job add acme ./hashes.txt \-\-hash\-type 1000 \-\-name ntlm
+add a hash file as a job
+.TP
+.B obliquity crack run acme \-\-gameplan quick\-dictionary
+run a crackplan
+.TP
+.B obliquity crack resume acme \-\-gameplan standard
+resume mid\-keyspace from hashcat's checkpoint
+.SH BRUTE \-\- ONLINE LOGIN ATTACKS (THC\-HYDRA)
+Live credential attacks against a service.
+.TP
+.B obliquity brute job add acme 10.0.0.5 \-\-service ssh \-\-name ssh\-box
+add a login target
+.TP
+.B obliquity brute job add acme app.test \-\-service http\-post\-form \-\-form\-spec "/login:user=^USER^&pass=^PASS^:F=invalid"
+web login form
+.TP
+.B obliquity brute run acme ssh\-box \-\-gameplan common\-creds
+run a loginplan
+.TP
+.B obliquity brute creds acme
+list recovered credentials
+.SH WORDLISTS
+A small downloadable catalog + an explorer.
+.TP
+.B obliquity wordlists list
+show the catalog and install status
+.TP
+.B obliquity wordlists inspect raft\-medium\-files.txt
+size, extensions, preview of a list
+.TP
+.B obliquity wordlists install seclists\-common rockyou
+download catalog entries
+.TP
+.B obliquity explore
+interactive TUI: browse gameplans + wordlists (Enter loads a gameplan)
+.SH REPORTS & HISTORY
+One shared database per project; several output formats.
+.TP
+.B obliquity coverage acme
+what's been run per host/tool
+.TP
+.B obliquity history acme
+unified log across all four pillars
+.TP
+.B obliquity report html acme \-\-open
+generate + open the HTML report
+.TP
+.B obliquity report json|csv|markdown acme
+other export formats
+.SH SEE ALSO
+Full docs and source: https://github.com/naturalstate/obliquity
