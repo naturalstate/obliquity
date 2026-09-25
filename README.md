@@ -164,12 +164,14 @@ If you don't already have it (`python3 --version` / `py --version`):
 `pip` and `venv` ship with Python on Windows/macOS; on Debian/Ubuntu they're
 the separate `python3-pip` / `python3-venv` packages shown above.
 
-### Installing feroxbuster, ffuf, and hashcat
+### Installing feroxbuster, ffuf, hashcat, and hydra
+
+Each pillar only needs its own tool; install just the ones you'll use.
 
 **macOS (Homebrew):**
 
 ```bash
-brew install feroxbuster ffuf hashcat
+brew install feroxbuster ffuf hashcat hydra
 ```
 
 **Windows (winget):**
@@ -181,19 +183,21 @@ winget install ffuf.ffuf
 # unzip it, and add the folder to your PATH:
 curl.exe -L -o hashcat.7z https://hashcat.net/files/hashcat-6.2.6.7z
 # (check https://hashcat.net/hashcat/ for the current version number)
+# thc-hydra has no native Windows build; run it under WSL:
+#   wsl sudo apt install hydra
 ```
 
 **Debian / Ubuntu / Kali (apt):**
 
 ```bash
-sudo apt install feroxbuster ffuf hashcat
+sudo apt install feroxbuster ffuf hashcat hydra
 ```
 
-**Fedora / RHEL (dnf):** hashcat is packaged; feroxbuster and ffuf aren't, so
-install those from upstream:
+**Fedora / RHEL (dnf):** hashcat and hydra are packaged; feroxbuster and ffuf
+aren't, so install those from upstream:
 
 ```bash
-sudo dnf install hashcat
+sudo dnf install hashcat hydra
 curl -sL https://raw.githubusercontent.com/epi052/feroxbuster/main/install-nix.sh | bash -s $HOME/.local/bin
 go install github.com/ffuf/ffuf/v2@latest   # or grab a prebuilt binary from ffuf's releases page
 ```
@@ -201,15 +205,17 @@ go install github.com/ffuf/ffuf/v2@latest   # or grab a prebuilt binary from ffu
 **Arch (pacman):**
 
 ```bash
-sudo pacman -S feroxbuster hashcat
+sudo pacman -S feroxbuster hashcat hydra
 go install github.com/ffuf/ffuf/v2@latest   # ffuf: via Go, or the AUR (yay -S ffuf)
 ```
 
-**Any platform, no package manager:** all three ship prebuilt binaries on
-their release pages -- download, extract, and put them on your `PATH`:
-[feroxbuster](https://github.com/epi052/feroxbuster/releases/latest),
+**Any platform, no package manager:** feroxbuster/ffuf/hashcat ship prebuilt
+binaries on their release pages -- download, extract, and put them on your
+`PATH`: [feroxbuster](https://github.com/epi052/feroxbuster/releases/latest),
 [ffuf](https://github.com/ffuf/ffuf/releases/latest),
-[hashcat](https://hashcat.net/hashcat/).
+[hashcat](https://hashcat.net/hashcat/). thc-hydra is built from source
+([vanhauser-thc/thc-hydra](https://github.com/vanhauser-thc/thc-hydra)) or run
+under WSL on Windows.
 
 ## Installation
 
