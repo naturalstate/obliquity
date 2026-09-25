@@ -118,13 +118,27 @@ def _main_loop(stdscr, gameplans, wordlists, on_load=None, project_label=None) -
     if use_color:
         curses.start_color()
         curses.use_default_colors()
-        # Match the CLI palette: cyan sections, magenta subsections, yellow
-        # accents, green success, red errors.
-        curses.init_pair(1, curses.COLOR_CYAN, -1)     # title, detail title
-        curses.init_pair(2, curses.COLOR_MAGENTA, -1)  # section headers
-        curses.init_pair(3, curses.COLOR_YELLOW, -1)   # accents / info status
-        curses.init_pair(4, curses.COLOR_GREEN, -1)    # success status
-        curses.init_pair(5, curses.COLOR_RED, -1)      # error status
+        # Prefer true-ish orange/blue/purple on 256-color terminals; fall back
+        # to the base 8 elsewhere. Keeps the CLI's cyan/orange/blue feel.
+        if curses.COLORS >= 256:
+            C_CYAN, C_ORANGE, C_BLUE, C_PURPLE, C_GREEN, C_RED = 44, 208, 39, 141, 42, 203
+        else:
+            C_CYAN, C_ORANGE, C_BLUE, C_PURPLE, C_GREEN, C_RED = (
+                curses.COLOR_CYAN, curses.COLOR_YELLOW, curses.COLOR_BLUE,
+                curses.COLOR_MAGENTA, curses.COLOR_GREEN, curses.COLOR_RED,
+            )
+        curses.init_pair(1, C_CYAN, -1)               # top title
+        curses.init_pair(2, curses.COLOR_MAGENTA, -1) # left section headers + divider
+        curses.init_pair(3, C_ORANGE, -1)             # detail title / info status / accents
+        curses.init_pair(4, C_GREEN, -1)              # success status
+        curses.init_pair(5, C_RED, -1)                # error status
+        curses.init_pair(6, C_BLUE, -1)               # detail section labels (subtle)
+        curses.init_pair(7, C_ORANGE, -1)             # [bust] tag
+        curses.init_pair(8, C_PURPLE, -1)             # [fuzz] tag
+        curses.init_pair(9, C_GREEN, -1)              # [crack] tag
+        curses.init_pair(10, C_RED, -1)               # [brute] tag
+
+    TOOL_PAIR = {"bust": 7, "fuzz": 8, "crack": 9, "brute": 10}
 
     def cp(n):
         return curses.color_pair(n) if use_color else 0
@@ -174,14 +188,26 @@ def _main_loop(stdscr, gameplans, wordlists, on_load=None, project_label=None) -
             ri = top + screen_line
             if ri >= len(rows):
                 break
-            kind, _obj, label = rows[ri]
+            kind, obj, label = rows[ri]
             y = 2 + screen_line
+            avail = left_w - 1
             if kind == "header":
-                _safe_add(stdscr, y, 0, label[: left_w - 1], left_w - 1, curses.A_BOLD | cp(2))
+                _safe_add(stdscr, y, 0, label[:avail], avail, curses.A_BOLD | cp(2))
+            elif ri == sel_row_idx:
+                # selected: a clean full-width reverse bar (readable over any tag color)
+                text = ("  " + label)[:avail].ljust(avail)
+                _safe_add(stdscr, y, 0, text, avail, curses.A_REVERSE | curses.A_BOLD)
+            elif kind == "gameplan":
+                # "[tool]" in the tool's color, name in default white
+                tag = f"[{obj.tool}]"
+                _safe_add(stdscr, y, 0, "  ", avail)
+                _safe_add(stdscr, y, 2, tag, max(0, avail - 2), curses.A_BOLD | cp(TOOL_PAIR.get(obj.tool, 3)))
+                name = " " + obj.name
+                nx = 2 + len(tag)
+                _safe_add(stdscr, y, nx, name[: max(0, avail - nx)], max(0, avail - nx))
             else:
-                attr = (curses.A_REVERSE | cp(1)) if ri == sel_row_idx else 0
-                text = ("  " + label)[: left_w - 1].ljust(left_w - 1)
-                _safe_add(stdscr, y, 0, text, left_w - 1, attr)
+                text = ("  " + label)[:avail].ljust(avail)
+                _safe_add(stdscr, y, 0, text, avail)
 
         # divider
         for y in range(2, 2 + list_h):
@@ -198,7 +224,12 @@ def _main_loop(stdscr, gameplans, wordlists, on_load=None, project_label=None) -
             if di >= len(detail):
                 break
             line = detail[di]
-            attr = (curses.A_BOLD | cp(1)) if di == 0 else 0
+            if di == 0:
+                attr = curses.A_BOLD | cp(3)                 # title in orange
+            elif line.rstrip().endswith(":") and line[:1].strip():
+                attr = curses.A_BOLD | cp(6)                 # section labels in blue (subtle)
+            else:
+                attr = 0
             _safe_add(stdscr, 2 + screen_line, left_w + 1, line[:pane_w], pane_w, attr)
 
         # footer: status message (if any) else position + scroll hint
@@ -218,9 +249,9 @@ def _main_loop(stdscr, gameplans, wordlists, on_load=None, project_label=None) -
         if ch in (ord("q"), 27):
             return
         elif ch in (curses.KEY_DOWN, ord("j")):
-            cur = min(cur + 1, len(nav) - 1); detail_scroll = 0; status = ""
+            cur = (cur + 1) % len(nav); detail_scroll = 0; status = ""   # wrap to top past bottom
         elif ch in (curses.KEY_UP, ord("k")):
-            cur = max(cur - 1, 0); detail_scroll = 0; status = ""
+            cur = (cur - 1) % len(nav); detail_scroll = 0; status = ""   # wrap to bottom past top
         elif ch in (curses.KEY_NPAGE, ord(" ")):
             detail_scroll = min(detail_scroll + pane_h - 1, max_scroll)
         elif ch in (curses.KEY_PPAGE, ord("b")):
@@ -283,9 +314,13 @@ def _run_textual(gameplans, wordlists, on_load=None, project_label=None) -> None
         def compose(self) -> ComposeResult:
             yield Header()
             items: list[ListItem] = []
+            tool_hex = {"bust": "#ff8700", "fuzz": "#9d7cff", "crack": "#00b894", "brute": "#ff5f5f"}
             items.append(Row(f"GAMEPLANS ({len(gameplans)})", "header", None))
             for gp in gameplans:
-                items.append(Row(f"[{gp.tool}] {gp.name}", "gameplan", gp))
+                # Rich markup: color the [tool] tag, keep the name default/white.
+                # The opening bracket is escaped so it renders literally.
+                color = tool_hex.get(gp.tool, "#ff8700")
+                items.append(Row(f"[{color}]\\[{gp.tool}][/] {gp.name}", "gameplan", gp))
             items.append(Row(f"WORDLISTS ({len(wordlists)})", "header", None))
             for wl in wordlists:
                 items.append(Row(wl.name, "wordlist", wl))

@@ -563,8 +563,10 @@ the download catalog):
 obliquity explore
 ```
 
-Scroll the left pane (`↑`/`↓`, `Home`/`End`); the right pane shows details for
-the highlighted item and scrolls with `PgUp`/`PgDn`; `q` quits. For a
+Scroll the left pane (`↑`/`↓`, wrapping around at the ends; `Home`/`End`); the
+right pane shows details for the highlighted item and scrolls with
+`PgUp`/`PgDn`; `q` quits. Tool tags (`[bust]`/`[fuzz]`/`[crack]`/`[brute]`) are
+color-coded and the detail pane uses the app's subtle blue/orange accents. For a
 **wordlist** it shows length, size, whether entries already carry extensions
 (and which), a **head and tail sample**, its description and typical use, the
 **gameplan(s) that reference it**, and **similar wordlists**. For a

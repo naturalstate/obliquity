@@ -745,6 +745,22 @@ matches (documented by a new test).
 - 1 new CLI test (132 total, all green). Verified colors + Enter-persists in a
   PTY.
 
+### 30. Explorer color + navigation polish (2026-09-25)
+
+- **Per-tool colored tags** in the list: the `[bust]`/`[fuzz]`/`[crack]`/
+  `[brute]` tag is colored (orange/purple/green/red -- close to the tool badge
+  colors), the gameplan name stays white. Selected row is a clean reverse bar.
+- **Subtle blue/orange in the detail pane**: the item title is orange, section
+  labels (lines ending in `:`) are blue, body text stays white -- tasteful, in
+  the app's palette.
+- **256-color aware**: uses true orange/blue/purple (208/39/141) on 256-color
+  terminals, falls back to the base 8 elsewhere.
+- **Wrap-around navigation**: pressing down past the last item wraps to the
+  top (and up past the top wraps to the bottom).
+- Applied the tag color to the Textual backend too (Rich markup). Verified in a
+  PTY. (Feature parked separately: Metasploit-style `set`/`show options`/`run`
+  workflow -- design recommended, build deferred.)
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
