@@ -2075,11 +2075,42 @@ def write_html_report(conn, project, output: Path | None = None) -> Path:
 
 
 def open_html_report(output: Path) -> None:
-    opened = webbrowser.open(output.resolve().as_uri())
-    if opened:
+    """Open a file in the default browser, cross-platform. Tries stdlib
+    webbrowser first (which already picks the right mechanism per OS), then an
+    explicit per-OS fallback (macOS `open`, Windows `os.startfile`, else
+    `xdg-open`) in case webbrowser is misconfigured or silently no-ops."""
+    output = output.resolve()
+    uri = output.as_uri()
+    try:
+        if webbrowser.open(uri):
+            kv("Opened", output)
+            return
+    except Exception:  # noqa: BLE001
+        pass
+
+    import platform
+    import subprocess
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            subprocess.run(["open", str(output)], check=False)
+        elif system == "Windows":
+            os.startfile(str(output))  # type: ignore[attr-defined]  # noqa: SLF001
+        else:
+            subprocess.run(["xdg-open", str(output)], check=False)
         kv("Opened", output)
-    else:
-        print(c(f"Could not open a browser automatically. Open this file manually: {output}", "yellow"))
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    print(c(f"Could not open a browser automatically. Open this file manually: {output}", "yellow"))
+
+
+def cmd_report_open(args) -> None:
+    conn = connect(DB_PATH)
+    project = resolve_project(conn, args)
+    # regenerate so what opens is current, then open in the default browser
+    output = write_html_report(conn, project, Path(args.output) if getattr(args, "output", None) else None)
+    open_html_report(output)
 
 
 def cmd_report_html(args) -> None:
@@ -2815,6 +2846,15 @@ for detailed options and examples. Only test systems you are authorized to asses
     rh.add_argument("--output", help="custom report path")
     rh.add_argument("--open", action="store_true", help="open the report in the default browser")
     rh.set_defaults(func=cmd_report_html)
+
+    ro = report_sub.add_parser(
+        "open", help="generate the HTML report and open it in your default browser (macOS/Linux/Windows)",
+        formatter_class=formatter,
+        epilog="examples:\n  obliquity report open acme\n  obliquity report open        # uses the active project",
+    )
+    ro.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
+    ro.add_argument("--output", help="custom report path")
+    ro.set_defaults(func=cmd_report_open)
 
     rj = report_sub.add_parser(
         "json", help="generate a JSON report (runs, findings, crack runs, cracked hashes)", formatter_class=formatter,

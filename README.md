@@ -725,12 +725,16 @@ available for further processing or sharing:
 
 ```bash
 obliquity report html acme
+obliquity report open acme         # generate the HTML report AND open it in your default browser
 obliquity report json acme
 obliquity report csv acme --kind cracked-hashes    # or: findings, runs, crack-runs, found-credentials, login-runs
 obliquity report markdown acme
 ```
 
-Generate and open one automatically after a successful scan:
+`report open` (and `report html --open`) open the report in your **default
+browser on any OS** -- it uses Python's `webbrowser` first and falls back to
+`open` (macOS) / `start`/`os.startfile` (Windows) / `xdg-open` (Linux) if that
+no-ops. You can also open one automatically right after a scan:
 
 ```bash
 obliquity bust run acme --gameplan generic-quick --open-report

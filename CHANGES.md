@@ -958,6 +958,14 @@ matches (documented by a new test).
   server -- Python's `http.server` keeps nothing on disk by default). The live
   dashboard shows whether the file log is on and its path.
 
+### 42. `obliquity report open` -- cross-platform report launcher (2026-09-25)
+
+- New `obliquity report open [project]`: regenerates the HTML report and opens
+  it in the **default browser on any OS**. The opener tries stdlib `webbrowser`
+  first, then falls back per-OS -- `open` (macOS), `os.startfile` (Windows),
+  `xdg-open` (Linux) -- so it still works when webbrowser silently no-ops. The
+  same robust opener backs `report html --open` and `run --open-report`.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
