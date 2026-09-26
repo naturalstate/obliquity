@@ -16,6 +16,7 @@ from obliquity.core.console import blank, c, section, subsection
 SECTIONS: list[tuple[str, str, list[tuple[str, str]]]] = [
     ("OVERVIEW", "",
      [("obliquity <command> --help", "detailed help for any command"),
+      ("obliquity console", "interactive REPL -- type commands without the 'obliquity' prefix"),
       ("obliquity doctor", "check that feroxbuster/ffuf/hashcat/hydra are installed")]),
     ("PROJECTS & HOSTS", "One project groups many hosts/jobs, results, and settings.",
      [("obliquity project create acme", "create a project"),

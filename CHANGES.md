@@ -854,6 +854,22 @@ matches (documented by a new test).
 - 6 new tests (151 total, all green). Verified end-to-end against a fake
   feroxbuster that floods 200s then returns clean results once filtered.
 
+### 36. Interactive console (REPL) -- Metasploit-style Phase 2 (2026-09-25)
+
+- **`obliquity console`**: an msfconsole-style interactive prompt. Type commands
+  without the `obliquity` prefix; the one-shot CLI is unchanged (dual-mode CLI).
+- `obliquity/console.py`: a thin REPL that feeds each typed line back through the
+  same `build_parser()`, so every existing command works verbatim. Console verbs
+  `use <tool>` / `back` / `help` / `clear` / `exit`; with a tool selected, bare
+  `run`/`plan`/`resume`/`job`/`creds` become `<tool> <verb> ...` and
+  `set`/`unset`/`options` get the tool inserted. Prompt shows `project:tool`.
+- `readline` history + tab-completion when available (graceful no-op on Windows
+  without pyreadline3); persists history under `~/.obliquity/`. SystemExit
+  (argparse/`die()`) and exceptions are caught so a bad command never drops the
+  session. Bare `obliquity` now also hints at `obliquity console`.
+- Sits on Phase 1's stored options (same state). 6 new tests (157 total, all
+  green). Verified end-to-end via a piped session (use/set/options/run/back).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

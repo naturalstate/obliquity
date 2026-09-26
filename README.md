@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-151%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-157%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -52,6 +52,7 @@ of four.
 - [Quickstart](#quickstart)
 - [Usage](#usage)
   - [Working across projects](#working-across-projects)
+  - [Interactive console](#interactive-console)
   - [Stateful options (Metasploit-style)](#stateful-options-metasploit-style)
   - [`bust`: content discovery](#bust-content-discovery)
   - [`fuzz`: parameter and API fuzzing](#fuzz-parameter-and-api-fuzzing)
@@ -374,6 +375,31 @@ obliquity bust run https://app.acme.com --gameplan generic-quick   # acme implie
 obliquity history                                                   # acme implied
 obliquity bust run other https://x.test --gameplan generic-quick   # explicit wins
 ```
+
+### Interactive console
+
+Prefer an `msfconsole`-style prompt over retyping `obliquity` each time? Drop
+into the REPL:
+
+```text
+$ obliquity console
+obliquity(acme) > use fuzz
+obliquity(acme:fuzz) > set endpoint /search
+fuzz endpoint => /search
+obliquity(acme:fuzz) > options
+obliquity(acme:fuzz) > run --dry-run
+obliquity(acme:fuzz) > back
+obliquity(acme) > project current
+obliquity(acme) > exit
+```
+
+It's a **dual-mode CLI**: the one-shot `obliquity <command>` still works
+everywhere (and stays the scriptable path). In the console, every command works
+without the prefix; `use <tool>` selects a tool so bare `run`/`plan`/`resume`/
+`set`/`unset`/`options`/`job`/`creds` target it, and `back` deselects. The
+prompt shows `project:tool` context. Tab-completion and command history are on
+(via `readline`); `help` lists everything; `exit` or Ctrl-D quits. A bad
+command just prints an error -- it never drops you out of the session.
 
 ### Stateful options (Metasploit-style)
 

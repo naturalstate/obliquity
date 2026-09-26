@@ -2091,6 +2091,11 @@ def cmd_manual(args) -> None:
     print_manual()
 
 
+def cmd_console(args) -> None:
+    from obliquity.console import run_console
+    run_console()
+
+
 def cmd_explore(args) -> None:
     # Lazy import so a TUI backend is only pulled in when the explorer runs.
     from obliquity.explorer_tui import run_explorer
@@ -2239,6 +2244,15 @@ for detailed options and examples. Only test systems you are authorized to asses
 
     doctor = sub.add_parser("doctor", help="check core and optional tool installations", formatter_class=formatter, epilog="example:\n  obliquity doctor")
     doctor.set_defaults(func=cmd_doctor)
+
+    console = sub.add_parser(
+        "console", help="interactive console (REPL) -- type commands without the 'obliquity' prefix",
+        description="Drop into an interactive msfconsole-style prompt. Every command works the "
+        "same, minus the 'obliquity' prefix; 'use <tool>' selects a tool so bare 'run'/'set'/"
+        "'options' target it. The one-shot CLI still works exactly as before.",
+        formatter_class=formatter, epilog="example:\n  obliquity console",
+    )
+    console.set_defaults(func=cmd_console)
 
     manual = sub.add_parser(
         "manual", help="show the full Obliquity manual (all commands, reformatted)",
@@ -2787,6 +2801,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.cmd is None:
         parser.print_help()
+        print(c("\nTip: run 'obliquity console' for an interactive prompt "
+                "(no need to retype 'obliquity').", "gray"))
         return
     args.func(args)
 
