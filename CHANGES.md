@@ -911,6 +911,23 @@ matches (documented by a new test).
   and live found-paths from feroxbuster (already tailed). Cheap given the
   existing 0.1s poll loop.
 
+### 39. Dedicated lab page + branded lab target (2026-09-25)
+
+- **`testlab/README.md` is now a proper page**: banner graphic up top, a safety
+  callout, one-time setup, and **two complete begin-to-end walkthroughs** --
+  Mode 1 (regular CLI) and Mode 2 (interactive console) -- covering every
+  pillar plus options, defaults, reports, explorer, flood guard, etc. Linked
+  from the main README (kept the README uncluttered).
+- **Branded web target**: `testlab/web.py` now serves a dark, Obliquity-themed
+  site -- rainbow-gradient ASCII banner, styled login form, a cool
+  "✓ Authenticated" success page, and branded 404/search/admin. All pillar
+  behavior preserved (bust codes, fuzz body-size delta, `F=Login failed`
+  marker). SMB branded in compose (server string / netbios `OBLIQUITY-LAB`);
+  FTP/SSH banners are protocol-limited.
+- **Offline brute**: new bundled `common-users.txt` + `weak-creds` loginplan
+  (and `password123` added to `passwords-common.txt`) so the lab's web/FTP/SSH/
+  SMB creds all crack with **no SecLists install** required.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

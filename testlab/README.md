@@ -1,99 +1,205 @@
-# Obliquity test lab
+<div align="center">
 
-A throwaway **localhost-only** target set for exercising all four pillars.
-Everything binds to `127.0.0.1`, weak creds are intentional. Two tiers:
+<img src="../docs/images/banner.svg" alt="Obliquity" width="720">
 
-- **Tier A — zero install (works now):** a pure-Python web target + hash
-  fixtures. Covers **bust, fuzz, crack, brute(http)**.
-- **Tier B — Docker (when installed):** real **FTP / SSH / SMB** for the other
-  `brute` services. Requires Docker Desktop.
+### Test Lab
 
-> Only run this against this lab. Point Obliquity at these local targets only.
+**A throwaway, localhost-only target set for exercising every Obliquity feature.**
+Two full walkthroughs below — one in regular CLI mode, one in the interactive console.
+
+[← Back to the main README](../README.md)
+
+</div>
 
 ---
 
-## Tier A — no install
+> ⚠️ **Authorized testing only.** Everything here binds to `127.0.0.1`, uses
+> intentionally weak credentials, and is meant to be attacked *by you, on your
+> own machine*. Point Obliquity at these local targets only.
 
-### 1. Web target (bust / fuzz / brute-http)
+Two tiers:
+
+- **Tier A — zero install (works now):** a pure-Python web target + hash fixtures. Covers **bust, fuzz, crack, brute(http)**.
+- **Tier B — Docker (optional):** real **FTP / SSH / SMB** for the network `brute` services.
+
+All commands run from the repo root (`obliquity-main/`), and assume `obliquity`
+is on your `PATH` (see the main README's install notes).
+
+---
+
+## Setup (do this once)
 
 ```bash
-# from the repo root, with the venv active
-python -m testlab.web                 # http://127.0.0.1:8000
-# soft-404 / wildcard mode to test the flood guard:
-OBLIQUITY_LAB_WILDCARD=1 python -m testlab.web
+# from the repo root, in a spare terminal, start the web target and LEAVE IT RUNNING
+python3 -m testlab.web                    # http://127.0.0.1:8000
+
+# in another terminal: generate hash fixtures for the crack pillar
+python3 -m testlab.hashes                 # -> testlab/fixtures/  (+ answers.txt)
+
+# install the wordlists the built-in bust/crack gameplans use
+obliquity wordlists install seclists-common seclists-big rockyou
+
+# (optional) start the network services for FTP/SSH/SMB brute
+cd testlab && docker compose up -d && cd ..
 ```
 
-Then, in another terminal:
+---
+
+# Mode 1 — Regular CLI
+
+A complete run through every pillar and most features, top to bottom.
 
 ```bash
+# --- project + host -------------------------------------------------------
+obliquity doctor                                  # check installed tools
 obliquity project create lab
-obliquity project use lab
-obliquity host add lab http://127.0.0.1:8000
+obliquity project use lab                         # make it the active project
+obliquity host add lab http://127.0.0.1:8000 --tech php --server apache
+obliquity project list
+obliquity project current                         # hosts, per-tool gameplans, options
 
-# bust -- should find: admin, backup, api, uploads, config.php, robots.txt,
-#         login, old, dev, test (whatever's in the wordlist)
-obliquity bust run --gameplan generic-quick
+# --- wordlists ------------------------------------------------------------
+obliquity wordlists list
+obliquity wordlists inspect seclists-common       # size / extensions / preview
+obliquity gameplans list                          # every gameplan for every tool
+obliquity explore                                 # TUI: browse gameplans + wordlists (q to quit)
 
-# fuzz -- should find recognized param names: q, id, page, debug, search,
-#         admin, api_key, redirect
-obliquity fuzz run --gameplan parameter-names-quick --endpoint /search
+# --- bust (content discovery) --------------------------------------------
+obliquity bust plan --gameplan generic-quick      # preview stages, no execution
+obliquity bust run --gameplan generic-quick       # finds admin, backup, config.php, robots.txt, login...
+obliquity bust run --gameplan generic-standard    # bigger pass
+obliquity bust run --gameplan generic-quick --filter-status 404   # noise control
+obliquity bust resume --gameplan generic-standard # skip completed stages
+# flood guard: restart the web target with  OBLIQUITY_LAB_WILDCARD=1  then:
+obliquity bust run --gameplan generic-quick       # every path 200 -> detects flood, offers re-run
 
-# brute (http form) -- should recover admin/password123, user/letmein, root/toor
+# --- fuzz (parameters) ----------------------------------------------------
+obliquity fuzz run --gameplan parameter-names-quick --endpoint /search   # finds q, id, page, debug...
+
+# --- crack (offline hashes) ----------------------------------------------
+obliquity crack job add lab testlab/fixtures/hashes-md5.txt --hash-type 0 --name md5
+obliquity crack job add lab testlab/fixtures/hashes-ntlm.txt --hash-type 1000 --name ntlm
+obliquity crack plan md5 --gameplan quick-dictionary
+obliquity crack run md5 --gameplan quick-dictionary     # cracks the 7 common ones
+obliquity crack run md5 --gameplan rules-basic          # try rules
+obliquity crack run ntlm --gameplan quick-dictionary
+# compare against the key:
+cat testlab/fixtures/answers.txt
+
+# --- brute (online logins) -----------------------------------------------
 obliquity brute job add lab 127.0.0.1 --service http-post-form --name weblogin \
   --port 8000 --form-spec "/login:user=^USER^&pass=^PASS^:F=Login failed"
-obliquity brute run weblogin
-```
+obliquity brute run weblogin --gameplan weak-creds       # recovers admin/password123, user/letmein, root/toor
+obliquity brute creds lab                                # list recovered creds
+# Tier B (Docker) services:
+obliquity brute job add lab 127.0.0.1 --service ftp --name ftp --port 21
+obliquity brute run ftp  --gameplan weak-creds
+obliquity brute job add lab 127.0.0.1 --service ssh --name ssh --port 2222
+obliquity brute run ssh  --gameplan weak-creds
+obliquity brute job add lab 127.0.0.1 --service smb --name smb --port 445
+obliquity brute run smb  --gameplan weak-creds
 
-**Flood guard:** start the web target with `OBLIQUITY_LAB_WILDCARD=1`, then run a
-bust -- every path returns 200, so Obliquity should detect the flood and offer
-to re-run filtered.
+# --- stored options (set once, run with no flags) ------------------------
+obliquity set fuzz endpoint /search
+obliquity set fuzz gameplan parameter-names-quick
+obliquity options fuzz
+obliquity fuzz run                                # uses the stored options
 
-### 2. Hash fixtures (crack)
+# --- project defaults (auto-load a gameplan per tool) --------------------
+obliquity project set-gameplan bust generic-standard
+obliquity project current
 
-```bash
-python -m testlab.hashes              # writes testlab/fixtures/*
-```
-
-Produces `hashes-md5.txt` (`-m 0`), `hashes-sha1.txt` (`-m 100`),
-`hashes-sha256.txt` (`-m 1400`), `hashes-ntlm.txt` (`-m 1000`), and
-`answers.txt` (the key). 7 of 10 per file are common passwords (crackable with
-rockyou / the bundled lists); 3 are random and won't crack.
-
-```bash
-obliquity crack job add lab testlab/fixtures/hashes-md5.txt --hash-type 0 --name md5
-obliquity crack run md5 --gameplan quick-dictionary
-# check answers.txt to confirm the 7 it should have cracked
+# --- reporting & review ---------------------------------------------------
+obliquity coverage lab                            # what ran per host/tool
+obliquity history lab                             # unified log across all pillars
+obliquity report html lab --open                  # HTML report (dirs, params, creds, cracked)
+obliquity report json lab
+obliquity report csv lab --kind found-credentials
+obliquity report markdown lab
 ```
 
 ---
 
-## Tier B — Docker (FTP / SSH / SMB)
+# Mode 2 — Interactive console (REPL)
 
-```bash
-cd testlab
-docker compose up -d          # web + ftp + ssh + smb, all on 127.0.0.1
-docker compose down           # stop + remove
+The exact same walkthrough, in `obliquity console`. Type commands **without** the
+`obliquity` prefix; `use <tool>` selects a tool so bare `run`/`set`/`options` target it.
+
+```text
+obliquity console                                 # enter the REPL
+
+# --- project + host -------------------------------------------------------
+obliquity(no project) > project create lab
+obliquity(no project) > project use lab
+obliquity(lab) > host add lab http://127.0.0.1:8000 --tech php --server apache
+obliquity(lab) > project current
+
+# --- bust -----------------------------------------------------------------
+obliquity(lab) > use bust
+obliquity(lab:bust) > options
+obliquity(lab:bust) > set gameplan generic-quick
+obliquity(lab:bust) > plan
+obliquity(lab:bust) > run
+obliquity(lab:bust) > set gameplan generic-standard
+obliquity(lab:bust) > run
+obliquity(lab:bust) > back
+
+# --- fuzz -----------------------------------------------------------------
+obliquity(lab) > use fuzz
+obliquity(lab:fuzz) > set gameplan parameter-names-quick
+obliquity(lab:fuzz) > set endpoint /search
+obliquity(lab:fuzz) > options
+obliquity(lab:fuzz) > run
+obliquity(lab:fuzz) > back
+
+# --- crack ----------------------------------------------------------------
+obliquity(lab) > crack job add lab testlab/fixtures/hashes-md5.txt --hash-type 0 --name md5
+obliquity(lab) > use crack
+obliquity(lab:crack) > set gameplan quick-dictionary
+obliquity(lab:crack) > run md5
+obliquity(lab:crack) > back
+
+# --- brute ----------------------------------------------------------------
+obliquity(lab) > brute job add lab 127.0.0.1 --service http-post-form --name weblogin --port 8000 --form-spec "/login:user=^USER^&pass=^PASS^:F=Login failed"
+obliquity(lab) > use brute
+obliquity(lab:brute) > set gameplan weak-creds
+obliquity(lab:brute) > run weblogin
+obliquity(lab:brute) > creds lab
+obliquity(lab:brute) > back
+
+# --- review & quit --------------------------------------------------------
+obliquity(lab) > coverage lab
+obliquity(lab) > history lab
+obliquity(lab) > report html lab --open
+obliquity(lab) > help
+obliquity(lab) > exit
 ```
 
-Credentials (all intentional):
+---
 
-| Service | Host:port | creds |
+## What it should find (expected results)
+
+| Pillar | Command | Expected |
 |---|---|---|
-| FTP | 127.0.0.1:21 | `ftpuser`/`password123`, `admin`/`admin` |
-| SSH | 127.0.0.1:2222 | `labuser`/`password123` |
-| SMB | 127.0.0.1:445 | `smbuser`/`password123`, `admin`/`admin` |
+| **bust** | `bust run --gameplan generic-quick` | `admin`, `backup`, `config.php`, `robots.txt`, `login`, `api`, `uploads` … |
+| **fuzz** | `fuzz run … --endpoint /search` | param names: `q`, `id`, `page`, `debug`, `search`, `admin`, `api_key`, `redirect` |
+| **crack** | `crack run md5` | the 7 common passwords in `answers.txt` (3 random ones won't crack) |
+| **brute** | `brute run weblogin --gameplan weak-creds` | `admin`/`password123`, `user`/`letmein`, `root`/`toor` |
+| **flood** | `OBLIQUITY_LAB_WILDCARD=1` + `bust run` | flood detected → offers to re-run filtered |
+
+## Docker services & credentials (Tier B)
+
+| Service | Host:port | credentials |
+|---|---|---|
+| FTP | `127.0.0.1:21` | `ftpuser`/`password123`, `admin`/`admin` |
+| SSH | `127.0.0.1:2222` | `labuser`/`password123` |
+| SMB | `127.0.0.1:445` | `smbuser`/`password123`, `admin`/`admin` |
+
+## Cleanup
 
 ```bash
-obliquity brute job add lab 127.0.0.1 --service ftp  --name ftp  --port 21
-obliquity brute run ftp                    # ftp-default plan -> ftpuser/admin
-
-obliquity brute job add lab 127.0.0.1 --service ssh  --name ssh  --port 2222
-obliquity brute run ssh
-
-obliquity brute job add lab 127.0.0.1 --service smb  --name smb  --port 445
-obliquity brute run smb
+docker compose -f testlab/docker-compose.yml down   # stop network services
+# Ctrl-C the web target; then optionally:
+obliquity project delete lab --yes
+rm -rf testlab/fixtures
 ```
-
-(The bundled `ftp-default` / `ssh-default` / `smb-default` loginplans use
-service-appropriate username lists; `password123`/`admin` are in the bundled
-`passwords-common.txt`, so they should be recovered.)

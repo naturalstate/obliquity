@@ -1,0 +1,7 @@
+{
+  "name": "weak-creds",
+  "description": "Generic weak-credential sweep for the test lab / quick checks: common usernames against a small common-password list. Works offline (bundled lists, no SecLists needed).",
+  "stages": [
+    {"name": "common", "userlist": "common-users.txt", "passlist": "passwords-common.txt", "tasks": 4, "stop_on_first_valid": true}
+  ]
+}

@@ -26,10 +26,13 @@ services:
 
   ssh:
     image: lscr.io/linuxserver/openssh-server:latest
+    hostname: obliquity-lab
     environment:
       PASSWORD_ACCESS: "true"
       USER_NAME: labuser
       USER_PASSWORD: password123
+      # SSH/FTP login banners are image/protocol-specific and awkward to set
+      # portably, so branding there is light; the hostname shows in the prompt.
     ports:
       - "127.0.0.1:2222:2222"
 
@@ -39,6 +42,9 @@ services:
       -u "smbuser;password123"
       -u "admin;admin"
       -s "public;/share;yes;no;yes;all"
+      -w "OBLIQUITY"
+      -g "server string = Obliquity Test Lab"
+      -g "netbios name = OBLIQUITY-LAB"
       -p
     ports:
       - "127.0.0.1:139:139"

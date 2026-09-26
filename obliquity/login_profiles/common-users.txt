@@ -1,0 +1,11 @@
+admin
+administrator
+user
+root
+guest
+test
+operator
+service
+ftpuser
+smbuser
+labuser

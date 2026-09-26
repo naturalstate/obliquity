@@ -329,6 +329,10 @@ obliquity bust run acme --open-report
 That's the whole loop: project, host, plan, run, report. Everything below
 is what's available once you need more control.
 
+> 🧪 **Want to try every feature safely?** The repo ships a **[Test Lab](testlab/README.md)** --
+> a localhost-only web/FTP/SSH/SMB target set plus hash fixtures, with a full
+> begin-to-end walkthrough for both the regular CLI and the interactive console.
+
 ## Usage
 
 ### Working across projects
