@@ -1,0 +1,19 @@
+{
+  "server": {"name": "Acme Blog (WordPress 6.4)", "header": "Apache/2.4.57", "powered_by": "PHP/8.1.27"},
+  "login_path": "/wp-login.php",
+  "fail_marker": "ERROR: The password you entered",
+  "creds": [["admin", "password123"], ["editor", "letmein"]],
+  "params": ["s", "p", "page_id", "author", "cat", "paged", "preview", "orderby"],
+  "paths": {
+    "/wp-login.php": {"status": 200, "body": "WordPress &rsaquo; Log In"},
+    "/wp-admin/": {"status": 302, "body": "redirect to wp-login.php"},
+    "/wp-content/": {"status": 200, "body": "index of /wp-content"},
+    "/wp-content/plugins/": {"status": 200, "body": "akismet\nwoocommerce\ncontact-form-7"},
+    "/wp-content/uploads/": {"status": 200, "body": "index of uploads"},
+    "/wp-includes/": {"status": 200, "body": "index of /wp-includes"},
+    "/xmlrpc.php": {"status": 405, "body": "XML-RPC server accepts POST requests only."},
+    "/readme.html": {"status": 200, "body": "<h1>WordPress</h1> Version 6.4"},
+    "/wp-config.php.bak": {"status": 200, "body": "define('DB_PASSWORD','hunter2');", "ctype": "text/plain"},
+    "/.wp-cli/": {"status": 200, "body": "wp-cli config"}
+  }
+}

@@ -928,6 +928,23 @@ matches (documented by a new test).
   (and `password123` added to `passwords-common.txt`) so the lab's web/FTP/SSH/
   SMB creds all crack with **no SecLists install** required.
 
+### 40. Lab admin center, live logs, and config profiles (2026-09-25)
+
+- **Live request log**: the web target now keeps an in-memory request log; sign
+  in and open **`/admin`** to watch requests stream in (auto-refreshing,
+  status-color-coded) *while a scan runs* -- an easy way to see bust/fuzz/brute
+  hitting the server in real time. (Excludes the poller + favicon noise.)
+- **Editable at runtime**: the admin center adds **paths** (dirs/files) and
+  **parameters** on the fly -- add `/secret/` and the next bust finds it; add a
+  param and fuzz finds it at `/search?NAME=`.
+- **Config profiles**: `--config <json>` (or paste JSON in the admin center)
+  reshapes the site to mimic a real server/CMS -- ships
+  `testlab/profiles/wordpress.json` (wp-admin/xmlrpc/wp-login/wp params) and a
+  documented format so you can replicate any client stack. Session-cookie auth
+  gates the admin routes; `--verbose` also prints requests to stdout.
+- All original pillar behavior preserved. Verified pillars, session/admin,
+  add-path/param, and the WordPress profile; screenshotted the admin log view.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
