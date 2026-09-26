@@ -13,3 +13,6 @@ build/
 *.sqlite3
 runs/
 reports/
+
+# test lab generated fixtures
+testlab/fixtures/

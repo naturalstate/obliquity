@@ -1,0 +1,45 @@
+# Obliquity test lab -- network services for the brute pillar (+ web for parity).
+# Everything binds to 127.0.0.1 only, so nothing is exposed off your machine.
+# Requires Docker Desktop. Usage:
+#     cd testlab && docker compose up -d      # start
+#     docker compose down                     # stop
+# Weak creds below are intentional -- this is a throwaway local target.
+
+services:
+  web:
+    image: python:3.12-slim
+    working_dir: /lab
+    volumes:
+      - ../:/lab:ro
+    command: python -m testlab.web --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  ftp:
+    image: delfer/alpine-ftp-server
+    environment:
+      USERS: "ftpuser|password123 admin|admin"
+      ADDRESS: 127.0.0.1
+    ports:
+      - "127.0.0.1:21:21"
+      - "127.0.0.1:21000-21010:21000-21010"
+
+  ssh:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      PASSWORD_ACCESS: "true"
+      USER_NAME: labuser
+      USER_PASSWORD: password123
+    ports:
+      - "127.0.0.1:2222:2222"
+
+  smb:
+    image: dperson/samba
+    command: >
+      -u "smbuser;password123"
+      -u "admin;admin"
+      -s "public;/share;yes;no;yes;all"
+      -p
+    ports:
+      - "127.0.0.1:139:139"
+      - "127.0.0.1:445:445"

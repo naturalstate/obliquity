@@ -884,6 +884,33 @@ matches (documented by a new test).
   `set host` a value that doesn't exist yet.
 - 2 new tests (159 total, all green).
 
+### 38. Local test lab (`testlab/`) (2026-09-25)
+
+- **Tier A (zero-install, pure stdlib):**
+  - `python -m testlab.web` -- a localhost-only web target with seeded dirs/files
+    (bust), a `/search` endpoint that recognizes real param names (fuzz), and a
+    `/login` form with weak creds (brute http-post-form). `OBLIQUITY_LAB_WILDCARD=1`
+    makes every path 200 to exercise the flood guard.
+  - `python -m testlab.hashes` -- generates MD5/SHA1/SHA256/NTLM hash files
+    (bundled pure-Python MD4 for NTLM, since 3.13+ dropped it) + an answer key;
+    7/10 crackable, 3 random.
+- **Tier B (Docker):** `testlab/docker-compose.yml` -- FTP / SSH / SMB (+ web)
+  with weak creds, all bound to 127.0.0.1, for the network `brute` services.
+- `testlab/README.md` has the exact `obliquity` commands + expected results per
+  pillar. Verified: real feroxbuster finds the seeded paths; NTLM hashes match
+  known values. Not shipped (packaging restricted to `obliquity*`); fixtures
+  gitignored.
+
+### Future: subdomain busting + richer live feedback (roadmapped)
+
+- **Subdomain / vhost discovery** (new): feroxbuster can't do it. Plan --
+  **vhost** via ffuf `-H "Host: FUZZ.domain"` (no new tool), **DNS subdomains**
+  via a gobuster (`dns`) backend. Likely a `bust` sub-mode or small pillar.
+- **Richer live feedback:** hashcat `--status-json` (live progress %, hashrate,
+  ETA, GPU temp -- highest value), live "found" lines from hydra and ffuf stdout,
+  and live found-paths from feroxbuster (already tailed). Cheap given the
+  existing 0.1s poll loop.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
