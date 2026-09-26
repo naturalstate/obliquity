@@ -148,8 +148,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- helpers ----------------------------------------------------------
     def _record(self, status: int, size: int) -> None:
-        # don't log the admin log-poller or favicon -- keep the view to real traffic
-        if self.path.startswith("/admin/logs.json") or self.path == "/favicon.ico":
+        # don't log the admin log-pollers or favicon -- keep the view to real traffic
+        if self.path.startswith("/admin/logs.json") or self.path.startswith("/admin/log.json") or self.path == "/favicon.ico":
             return
         ip = self.client_address[0] if self.client_address else "-"
         ua = (self.headers.get("User-Agent") or "-")
@@ -204,6 +204,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(403, "[]", "application/json")
             else:
                 self._send(200, json.dumps(list(STATE.log)[-150:][::-1]), "application/json")
+            return
+
+        if path == "/admin/log.json":  # full log for the detailed page (newest first)
+            if not self._authed():
+                self._send(403, "[]", "application/json")
+            else:
+                self._send(200, json.dumps(list(STATE.log)[-5000:][::-1]), "application/json")
             return
 
         if path == "/admin/log":
@@ -372,23 +379,27 @@ setInterval(tick,1000);tick();
         if not self._authed():
             return page("Log", "<h1>Log</h1><div class=card><p class=muted>Please "
                         f"<a href='{html.escape(STATE.login_path)}'>sign in</a>.</p></div>")
-        entries = list(STATE.log)[::-1]  # newest first
-        rows = "".join(
-            f"<tr><td>{e['t']}</td><td>{html.escape(e['ip'])}</td><td>{e['m']}</td>"
-            f"<td>{html.escape(e['p'])}</td>"
-            f"<td class='s{e['s']//100}'>{e['s']}</td><td>{e['sz']}</td>"
-            f"<td class=muted>{html.escape(e['ua'])}</td></tr>"
-            for e in entries) or "<tr><td colspan=7 class=muted>no requests yet</td></tr>"
-        loc = ("Written to disk at <code>" + html.escape(STATE.access_log_path) + "</code>"
+        loc = ("Also written to <code>" + html.escape(STATE.access_log_path) + "</code>"
                if STATE.access_log_path else
-               "In-memory (up to 50,000). Start with <code>--access-log &lt;path&gt;</code> to also write a real logfile.")
+               "In-memory (up to 50,000). Add <code>--access-log &lt;path&gt;</code> to also write a real logfile.")
+        # Live: JS polls /admin/log.json and re-renders, so it stays current while
+        # a scan runs (up to 5000 newest). Auto-scroll only when already at top.
         return page("Full log",
-            f"<h1>Request log</h1><p class=muted><b>{len(entries):,}</b> entries (newest first, scroll for more). {loc} "
+            "<h1>Request log <span id=count class=muted style='font-size:15px'></span></h1>"
+            f"<p class=muted>Newest first, live (auto-updates). {loc} "
             "<a href='/admin'>&larr; back to admin</a></p>"
             "<div class=card style='max-height:80vh;overflow:auto'>"
             "<table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th>"
             "<th>status</th><th>bytes</th><th>user-agent</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table></div>")
+            "<tbody id=full><tr><td colspan=7 class=muted>loading...</td></tr></tbody></table></div>"
+            """<script>
+const cls={2:'s2',3:'s3',4:'s4',5:'s5'};
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function tick(){try{const r=await fetch('/admin/log.json');const j=await r.json();
+document.getElementById('count').textContent='('+j.length.toLocaleString()+' shown)';
+document.getElementById('full').innerHTML=j.length?j.map(e=>`<tr><td>${e.t}</td><td>${esc(e.ip)}</td><td>${e.m}</td><td>${esc(e.p)}</td><td class="${cls[Math.floor(e.s/100)]||''}">${e.s}</td><td>${e.sz}</td><td class=muted>${esc(e.ua)}</td></tr>`).join(''):'<tr><td colspan=7 class=muted>no requests yet</td></tr>';}catch(e){}}
+setInterval(tick,1500);tick();
+</script>""")
 
 
 def main() -> None:
