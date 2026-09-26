@@ -92,6 +92,27 @@ class RequireHostTests(TestCase):
             # picks the first rather than erroring
             self.assertEqual(require_host(conn, p, None)["url"], "https://first.test")
 
+    def test_scheme_less_target_resolves_to_existing_https_host(self) -> None:
+        from obliquity.cli import require_host
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+            add_host(conn, p["id"], "https://scanme.test")
+            # a stale bare value should match the https host, not create a dup
+            self.assertEqual(require_host(conn, p, "scanme.test")["url"], "https://scanme.test")
+            self.assertEqual(len(list_hosts(conn, p["id"])), 1)
+
+    def test_unknown_target_is_auto_added(self) -> None:
+        from obliquity.cli import require_host
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+            host = require_host(conn, p, "newhost.test")  # not present -> added, https-normalized
+            self.assertEqual(host["url"], "https://newhost.test")
+            self.assertEqual(len(list_hosts(conn, p["id"])), 1)
+
 
 class DeleteProjectTests(TestCase):
     def test_delete_removes_project_and_cascades_to_hosts(self) -> None:

@@ -265,8 +265,19 @@ def normalize_host_target(args) -> None:
 def require_host(conn, project: dict, url: str | None):
     if url:
         host = get_host(conn, project["id"], url)
+        # Tolerate a scheme-less value (e.g. a stored 'scanme.org') by trying
+        # the https:// form before giving up.
+        if host is None and "://" not in url:
+            https = "https://" + url
+            host = get_host(conn, project["id"], https)
+            if host is not None:
+                return host
+            url = https
+        # The target still isn't in the project -- add it rather than erroring,
+        # so 'set host'/--url just work (a bare hostname got https:// above).
         if host is None:
-            die(f"host not found in project: {url}. Add it first with: obliquity host add {project['name']} {url}")
+            host = add_host(conn, project["id"], url)
+            print(c(f"Added host to project: {url}", "gray"))
         return host
 
     hosts = list_hosts(conn, project["id"])
