@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange?style=flat-square)](CHANGES.md)
-[![Tests](https://img.shields.io/badge/tests-157%20passing-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen?style=flat-square)](tests/)
 [![feroxbuster](https://img.shields.io/badge/feroxbuster-bust-e8622c?style=flat-square)](https://github.com/epi052/feroxbuster)
 [![ffuf](https://img.shields.io/badge/ffuf-fuzz-7c4dff?style=flat-square)](https://github.com/ffuf/ffuf)
 [![hashcat](https://img.shields.io/badge/hashcat-crack-00b894?style=flat-square)](https://hashcat.net/hashcat/)
@@ -416,6 +416,12 @@ obliquity options fuzz          # 'show options': OPTION / VALUE / REQUIRED / SO
 obliquity fuzz run              # uses the stored options -- no flags needed
 obliquity unset fuzz endpoint   # revert one option
 ```
+
+`set host <url>` is Metasploit-style: if that host isn't in the project yet it's
+**added automatically** (a bare hostname gets an `https://` prefix). With several
+hosts and none chosen, a run just uses the **first** one (and says so); pick
+another with a URL arg or `set host <url>`. `options bust` shows the project's
+host even when you haven't set one.
 
 Precedence is **explicit flag > stored option > project default > built-in
 default**, so `obliquity fuzz run --endpoint /admin` still wins for that run.

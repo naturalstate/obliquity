@@ -71,6 +71,28 @@ class DefaultGameplanTests(TestCase):
             self.assertEqual(get_project(conn, "acme")["default_bust_gameplan"], "generic-deep")
 
 
+class RequireHostTests(TestCase):
+    def test_single_host_used_automatically(self) -> None:
+        from obliquity.cli import require_host
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+            add_host(conn, p["id"], "https://only.test")
+            self.assertEqual(require_host(conn, p, None)["url"], "https://only.test")
+
+    def test_multiple_hosts_default_to_first(self) -> None:
+        from obliquity.cli import require_host
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = connect(root / "obliquity.db")
+            p = create_project(conn, "acme", root / "acme")
+            add_host(conn, p["id"], "https://first.test")
+            add_host(conn, p["id"], "https://second.test")
+            # picks the first rather than erroring
+            self.assertEqual(require_host(conn, p, None)["url"], "https://first.test")
+
+
 class DeleteProjectTests(TestCase):
     def test_delete_removes_project_and_cascades_to_hosts(self) -> None:
         with TemporaryDirectory() as tmp:

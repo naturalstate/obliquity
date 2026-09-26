@@ -271,10 +271,13 @@ def require_host(conn, project: dict, url: str | None):
 
     hosts = list_hosts(conn, project["id"])
     if not hosts:
-        die(f"project '{project['name']}' has no hosts yet. Add one with: obliquity host add {project['name']} <url>")
+        die(f"project '{project['name']}' has no hosts yet. Add one with: obliquity host add {project['name']} <url> "
+            f"(or 'set host <url>' to add + select it)")
     if len(hosts) > 1:
-        options = ", ".join(h["url"] for h in hosts)
-        die(f"project '{project['name']}' has multiple hosts; specify one: {options}")
+        # Default to the first host rather than erroring; note it so it's never
+        # a surprise. Pick a specific one with a URL arg or 'set host <url>'.
+        print(c(f"Using first host: {hosts[0]['url']}  (project has {len(hosts)}; "
+                f"pass a URL or 'set host <url>' to choose another)", "gray"))
     return hosts[0]
 
 
@@ -818,6 +821,7 @@ def cmd_set(args) -> None:
         except ValueError:
             die(f"{tool} {key} expects an integer, got: {value}")
 
+    added_host = False
     if key == "gameplan":
         # Validate and store in the dedicated default-gameplan column.
         resolver = {"bust": resolve_gameplan, "fuzz": resolve_fuzz_plan,
@@ -827,11 +831,23 @@ def cmd_set(args) -> None:
         except Exception as exc:  # noqa: BLE001
             die(f"not a valid {tool} gameplan: {value} ({exc})")
         set_project_default_gameplan(conn, project["id"], tool, value)
+    elif key == "host":
+        # Metasploit-style: `set host <url>` adds the host to the project if it
+        # isn't there yet (a project host must exist for a run to resolve it),
+        # normalizing a bare hostname to an https:// URL.
+        if "://" not in value:
+            value = "https://" + value
+        if get_host(conn, project["id"], value) is None:
+            add_host(conn, project["id"], value)
+            added_host = True
+        set_project_option(conn, project["id"], tool, key, value)
     else:
         set_project_option(conn, project["id"], tool, key, value)
 
     section("Option set", "green")
     kv("Project", project["name"])
+    if added_host:
+        kv("Host added to project", value, color="green")
     print(c(f"{tool} {key} => {value}", "cyan", bold=True))
     print(c(f"'obliquity {tool} run' will use it (an explicit --{key.replace('_','-')} still overrides).", "gray"))
 
@@ -859,6 +875,7 @@ def cmd_options(args) -> None:
     tool = args.tool
     stored = get_project_options(conn, project["id"], tool)
     gameplan_default = project[_GAMEPLAN_COLUMN[tool]]
+    hosts = [h["url"] for h in list_hosts(conn, project["id"])] if tool in ("bust", "fuzz") else []
     section(f"Options: {tool}  (project {project['name']})", "cyan")
     header = f"  {'OPTION'.ljust(10)} {'VALUE'.ljust(30)} {'REQUIRED'.ljust(9)} SOURCE"
     print(c(header, "gray", bold=True))
@@ -866,6 +883,15 @@ def cmd_options(args) -> None:
         if opt.key == "gameplan":
             value = gameplan_default or "(built-in default)"
             source = "set" if gameplan_default else "default"
+        elif opt.key == "host" and "host" not in stored:
+            # No override set -> show the project's actual host(s), which the run
+            # uses automatically (first one if several).
+            if not hosts:
+                value, source = "(none -- add one)", "-"
+            elif len(hosts) == 1:
+                value, source = hosts[0], "project"
+            else:
+                value, source = f"{hosts[0]} (+{len(hosts) - 1} more)", "project"
         elif opt.key in stored:
             value = stored[opt.key]
             source = "set"

@@ -870,6 +870,20 @@ matches (documented by a new test).
 - Sits on Phase 1's stored options (same state). 6 new tests (157 total, all
   green). Verified end-to-end via a piped session (use/set/options/run/back).
 
+### 37. Host UX fixes (set host adds; multiple hosts pick first; options shows host) (2026-09-25)
+
+- **`set host <url>` now adds the host** to the project if it isn't there
+  (Metasploit-style), prefixing a bare hostname with `https://`. Previously
+  `set host` only *selected* an existing host, so a run failed with "host not
+  found".
+- **Multiple hosts + none chosen -> use the first** (with a printed note),
+  instead of erroring -- restoring the agreed "default to the first host"
+  behavior. A URL arg or `set host <url>` still picks a specific one.
+- **`options bust`/`fuzz` shows the project's host** (source `project`) when no
+  override is set, so an empty-looking `host` field no longer tempts you to
+  `set host` a value that doesn't exist yet.
+- 2 new tests (159 total, all green).
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
