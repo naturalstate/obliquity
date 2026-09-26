@@ -64,6 +64,7 @@ SECTIONS: list[tuple[str, str, list[tuple[str, str]]]] = [
       ("obliquity history acme", "unified log across all four pillars"),
       ("obliquity report html acme --open", "generate + open the HTML report"),
       ("obliquity report open acme", "generate + open the HTML report in your default browser (any OS)"),
+      ("obliquity report serve", "browse every project's report in your browser (local server)"),
       ("obliquity report json|csv|markdown acme", "other export formats")]),
 ]
 

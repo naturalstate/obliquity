@@ -87,7 +87,7 @@ class LabState:
             "/old/": {"status": 200, "body": "old site", "ctype": "text/plain"},
             "/phpinfo.php": {"status": 200, "body": "phpinfo() OBLIQUITY-LAB", "ctype": "text/plain"},
         }
-        self.log: deque = deque(maxlen=2000)
+        self.log: deque = deque(maxlen=50000)  # keep tens of thousands for a big scan
         self.sessions: set[str] = set()
         self.verbose = False
         self.access_log_path: str | None = None
@@ -381,11 +381,11 @@ setInterval(tick,1000);tick();
             for e in entries) or "<tr><td colspan=7 class=muted>no requests yet</td></tr>"
         loc = ("Written to disk at <code>" + html.escape(STATE.access_log_path) + "</code>"
                if STATE.access_log_path else
-               "In-memory only (last 2000). Start with <code>--access-log &lt;path&gt;</code> to also write a real logfile.")
+               "In-memory (up to 50,000). Start with <code>--access-log &lt;path&gt;</code> to also write a real logfile.")
         return page("Full log",
-            f"<h1>Request log</h1><p class=muted>{len(entries)} entries (newest first). {loc} "
+            f"<h1>Request log</h1><p class=muted><b>{len(entries):,}</b> entries (newest first, scroll for more). {loc} "
             "<a href='/admin'>&larr; back to admin</a></p>"
-            "<div class=card style='max-height:70vh;overflow:auto'>"
+            "<div class=card style='max-height:80vh;overflow:auto'>"
             "<table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th>"
             "<th>status</th><th>bytes</th><th>user-agent</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></div>")

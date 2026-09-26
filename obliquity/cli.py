@@ -960,11 +960,17 @@ def cmd_project_unset(args) -> None:
 
 def cmd_project_create(args) -> None:
     conn = connect(DB_PATH)
-    root = PROJECTS_DIR / args.name
+    # --root lets you point all of this project's output (runs, reports, raw
+    # tool output) at one directory -- e.g. an engagement folder -- instead of
+    # the default ~/.obliquity/projects/<name>.
+    if getattr(args, "root", None):
+        root = Path(args.root).expanduser().resolve()
+    else:
+        root = PROJECTS_DIR / args.name
     project = create_project(conn, args.name, root)
     section("Project created", "green")
     kv("Name", project["name"])
-    kv("Root", project["root_dir"])
+    kv("Root (all output goes here)", project["root_dir"])
 
     missing = default_profile_missing_entries()
     if missing:
@@ -2113,6 +2119,11 @@ def cmd_report_open(args) -> None:
     open_html_report(output)
 
 
+def cmd_report_serve(args) -> None:
+    from obliquity.report_server import serve_reports
+    serve_reports(DB_PATH, port=args.port, open_browser=not args.no_open)
+
+
 def cmd_report_html(args) -> None:
     conn = connect(DB_PATH)
     project = resolve_project(conn, args)
@@ -2532,6 +2543,9 @@ for detailed options and examples. Only test systems you are authorized to asses
         formatter_class=formatter,
     )
     pc.add_argument("name", help="unique project name")
+    pc.add_argument("--root", "--dir", dest="root",
+                    help="directory to store ALL of this project's output (runs, reports, raw tool output); "
+                    "default: ~/.obliquity/projects/<name>. Point it at your engagement folder.")
     pc.set_defaults(func=cmd_project_create)
 
     pa = project_sub.add_parser(
@@ -2855,6 +2869,15 @@ for detailed options and examples. Only test systems you are authorized to asses
     ro.add_argument("project", nargs="?", help="project name (optional if an active project is set via 'project use')")
     ro.add_argument("--output", help="custom report path")
     ro.set_defaults(func=cmd_report_open)
+
+    rsv = report_sub.add_parser(
+        "serve", help="browse every project's report in your browser (local report server)",
+        formatter_class=formatter,
+        epilog="examples:\n  obliquity report serve\n  obliquity report serve --port 9000 --no-open",
+    )
+    rsv.add_argument("--port", type=int, default=8787, help="port to serve on (default: 8787)")
+    rsv.add_argument("--no-open", action="store_true", help="don't auto-open the browser")
+    rsv.set_defaults(func=cmd_report_serve)
 
     rj = report_sub.add_parser(
         "json", help="generate a JSON report (runs, findings, crack runs, cracked hashes)", formatter_class=formatter,

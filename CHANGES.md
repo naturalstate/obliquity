@@ -966,6 +966,22 @@ matches (documented by a new test).
   `xdg-open` (Linux) -- so it still works when webbrowser silently no-ops. The
   same robust opener backs `report html --open` and `run --open-report`.
 
+### 43. Report timestamps, report browser, custom output dir, bigger lab log (2026-09-25)
+
+- **HTML report timestamps**: a header line with **Generated / First activity /
+  Last activity**, and **Started / Finished** columns on every run table (bust /
+  crack / login), plus **Discovered / Cracked / Found** columns on findings /
+  cracked-hashes / credentials.
+- **`obliquity report serve`**: a tiny localhost server that lists every project
+  and opens each one's report on click -- browse reports across projects without
+  regenerating files by hand.
+- **Custom output directory**: `obliquity project create <name> --root <dir>`
+  points ALL of a project's output (runs, reports, raw tool output) at one
+  folder -- e.g. an engagement directory -- instead of ~/.obliquity/projects/.
+- **Lab detailed log**: the in-memory buffer holds up to 50,000 entries now (was
+  2,000) and `/admin/log` shows them all in a taller scrollable list with a
+  live count, so a real scan actually fills it.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

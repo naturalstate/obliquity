@@ -341,6 +341,7 @@ List projects, and set an **active project** so you stop repeating its name
 on every command (like `kubectl`/`docker` contexts):
 
 ```bash
+obliquity project create acme --root ~/engagements/acme   # keep ALL output (runs, reports, raw) in one folder
 obliquity project list            # all projects + host/job/run counts; * marks active
 obliquity project use acme        # make acme the active project (persists)
 obliquity project current         # show the active project + its defaults (see below)
@@ -726,6 +727,7 @@ available for further processing or sharing:
 ```bash
 obliquity report html acme
 obliquity report open acme         # generate the HTML report AND open it in your default browser
+obliquity report serve             # browse EVERY project's report in your browser (local server, pick from a list)
 obliquity report json acme
 obliquity report csv acme --kind cracked-hashes    # or: findings, runs, crack-runs, found-credentials, login-runs
 obliquity report markdown acme

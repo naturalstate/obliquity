@@ -41,6 +41,14 @@ def generate_html(
     login_runs = login_runs or []
     found_credentials = found_credentials or []
 
+    # Report-level timestamps: when it was generated, and the span of activity.
+    _all_runs = list(runs) + list(crack_runs) + list(login_runs)
+    _starts = [r["started_at"] for r in _all_runs if r["started_at"]]
+    _finishes = [r["finished_at"] for r in _all_runs if r["finished_at"]]
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    first_activity = min(_starts) if _starts else "-"
+    last_activity = max(_finishes) if _finishes else "-"
+
     status_counts = Counter(f["status_code"] for f in findings)
     host_counts = Counter(f["host_url"] for f in findings)
     stage_counts = Counter(f["stage_name"] for f in findings)
@@ -68,6 +76,7 @@ def generate_html(
           <td>{_esc(cr['target'])}</td>
           <td>{_esc(cr['stage_name'])}</td>
           <td>{_esc(cr['loginplan_name'])}</td>
+          <td>{_esc(cr['found_at'])}</td>
         </tr>
         """
         for cr in found_credentials
@@ -80,6 +89,8 @@ def generate_html(
           <td>{_esc(r['loginplan_name'])}</td>
           <td>{_esc(r['status'])}</td>
           <td>{_esc(r['exit_code'])}</td>
+          <td>{_esc(r['started_at'])}</td>
+          <td>{_esc(r['finished_at'])}</td>
           <td><code>{_esc(r['command'])}</code></td>
         </tr>
         """
@@ -93,6 +104,8 @@ def generate_html(
           <td>{_esc(r['crackplan_name'])}</td>
           <td>{_esc(r['status'])}</td>
           <td>{_esc(r['exit_code'])}</td>
+          <td>{_esc(r['started_at'])}</td>
+          <td>{_esc(r['finished_at'])}</td>
           <td><code>{_esc(r['command'])}</code></td>
         </tr>
         """
@@ -107,6 +120,7 @@ def generate_html(
           <td><code>{_esc(c['plaintext'])}</code></td>
           <td>{_esc(c['stage_name'])}</td>
           <td>{_esc(c['crackplan_name'])}</td>
+          <td>{_esc(c['cracked_at'])}</td>
         </tr>
         """
         for c in cracked_hashes
@@ -132,6 +146,8 @@ def generate_html(
           <td>{_esc(r['gameplan_name'])}</td>
           <td>{_esc(r['status'])}</td>
           <td>{_esc(r['exit_code'])}</td>
+          <td>{_esc(r['started_at'])}</td>
+          <td>{_esc(r['finished_at'])}</td>
           <td><code>{_esc(r['command'])}</code></td>
         </tr>
         """
@@ -149,6 +165,7 @@ def generate_html(
           <td>{_esc(f['redirect'])}</td>
           <td>{_esc(f['stage_name'])}</td>
           <td>{_esc(f['source'])}</td>
+          <td>{_esc(f['discovered_at'])}</td>
         </tr>
         """
         for f in findings
@@ -200,6 +217,7 @@ def generate_html(
   <pre class="banner">{_esc(REPORT_BANNER)}</pre>
   <h1>Obliquity Report</h1>
   <div class="muted">Project: {_esc(project['name'])}</div>
+  <div class="muted">Generated: {_esc(generated_at)} &nbsp;&middot;&nbsp; First activity: {_esc(first_activity)} &nbsp;&middot;&nbsp; Last activity: {_esc(last_activity)}</div>
 </header>
 <main>
   <section class="cards">{summary_cards}</section>
@@ -221,37 +239,37 @@ def generate_html(
 
   <h2>Findings</h2>
   <table>
-    <thead><tr><th>Status</th><th>URL</th><th>Length</th><th>Words</th><th>Lines</th><th>Redirect</th><th>Stage</th><th>Source</th></tr></thead>
+    <thead><tr><th>Status</th><th>URL</th><th>Length</th><th>Words</th><th>Lines</th><th>Redirect</th><th>Stage</th><th>Source</th><th>Discovered</th></tr></thead>
     <tbody>{finding_rows}</tbody>
   </table>
 
   <h2>Runs</h2>
   <table>
-    <thead><tr><th>Stage</th><th>Gameplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
+    <thead><tr><th>Stage</th><th>Gameplan</th><th>Status</th><th>Exit</th><th>Started</th><th>Finished</th><th>Command</th></tr></thead>
     <tbody>{run_rows}</tbody>
   </table>
 
   <h2>Cracked Hashes</h2>
   <table>
-    <thead><tr><th>Job</th><th>Hash</th><th>Plaintext</th><th>Stage</th><th>Crackplan</th></tr></thead>
+    <thead><tr><th>Job</th><th>Hash</th><th>Plaintext</th><th>Stage</th><th>Crackplan</th><th>Cracked</th></tr></thead>
     <tbody>{cracked_hash_rows}</tbody>
   </table>
 
   <h2>Crack Runs</h2>
   <table>
-    <thead><tr><th>Stage</th><th>Crackplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
+    <thead><tr><th>Stage</th><th>Crackplan</th><th>Status</th><th>Exit</th><th>Started</th><th>Finished</th><th>Command</th></tr></thead>
     <tbody>{crack_run_rows}</tbody>
   </table>
 
   <h2>Found Credentials</h2>
   <table>
-    <thead><tr><th>Username</th><th>Password</th><th>Service</th><th>Target</th><th>Stage</th><th>Loginplan</th></tr></thead>
+    <thead><tr><th>Username</th><th>Password</th><th>Service</th><th>Target</th><th>Stage</th><th>Loginplan</th><th>Found</th></tr></thead>
     <tbody>{credential_rows}</tbody>
   </table>
 
   <h2>Login Runs</h2>
   <table>
-    <thead><tr><th>Stage</th><th>Loginplan</th><th>Status</th><th>Exit</th><th>Command</th></tr></thead>
+    <thead><tr><th>Stage</th><th>Loginplan</th><th>Status</th><th>Exit</th><th>Started</th><th>Finished</th><th>Command</th></tr></thead>
     <tbody>{login_run_rows}</tbody>
   </table>
 </main>

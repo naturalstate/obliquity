@@ -52,7 +52,8 @@ Sign in to the web target (default `admin` / `password123`) and open
 
 - shows a **live request log** (auto-refreshing) so you can *watch a scan hit
   paths in real time* while `obliquity bust run` is going -- with a **full
-  detailed log** page (`/admin/log`: client IP, bytes, user-agent, scrollable);
+  detailed log** page (`/admin/log`: client IP, bytes, user-agent) that holds up
+  to 50,000 entries in a scrollable list, so a big scan really fills it;
 - lets you **add paths** (dirs/files) and **parameters** at runtime — add
   `/secret/` and watch the next bust find it, or add a param and watch fuzz find it;
 - lets you **import a config profile** (paste JSON) to reshape the site on the fly.
