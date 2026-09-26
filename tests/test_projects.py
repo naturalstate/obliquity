@@ -114,6 +114,30 @@ class RequireHostTests(TestCase):
             self.assertEqual(len(list_hosts(conn, p["id"])), 1)
 
 
+class NormalizeCrackTargetTests(TestCase):
+    def test_lone_positional_becomes_job_when_not_a_project(self) -> None:
+        from argparse import Namespace
+        from obliquity.cli import normalize_crack_target
+        with TemporaryDirectory() as tmp:
+            conn = connect(Path(tmp) / "obliquity.db")
+            create_project(conn, "lab", Path(tmp) / "lab")
+            args = Namespace(project="md5", job=None)  # 'md5' is a job, not a project
+            normalize_crack_target(conn, args)
+            self.assertEqual(args.job, "md5")
+            self.assertIsNone(args.project)
+
+    def test_real_project_positional_is_left_alone(self) -> None:
+        from argparse import Namespace
+        from obliquity.cli import normalize_crack_target
+        with TemporaryDirectory() as tmp:
+            conn = connect(Path(tmp) / "obliquity.db")
+            create_project(conn, "lab", Path(tmp) / "lab")
+            args = Namespace(project="lab", job=None)
+            normalize_crack_target(conn, args)
+            self.assertEqual(args.project, "lab")
+            self.assertIsNone(args.job)
+
+
 class DeleteProjectTests(TestCase):
     def test_delete_removes_project_and_cascades_to_hosts(self) -> None:
         with TemporaryDirectory() as tmp:

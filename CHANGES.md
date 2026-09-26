@@ -945,6 +945,19 @@ matches (documented by a new test).
 - All original pillar behavior preserved. Verified pillars, session/admin,
   add-path/param, and the WordPress profile; screenshotted the admin log view.
 
+### 41. `crack run <job>` fix + detailed lab logs (2026-09-25)
+
+- **`crack run md5` now works.** The lone positional was parsed as the *project*
+  ("project not found: md5"); added `normalize_crack_target` (mirroring brute's)
+  so a single positional that isn't a project is treated as the job. `crack
+  plan` too.
+- **Lab: detailed logs.** The admin log now records client IP, response bytes,
+  and user-agent; a new **`/admin/log`** page shows the full scrollable history
+  with all columns. `--access-log <path>` also writes a **real Apache-combined
+  logfile on disk** (so there's an actual filesystem location, like a real
+  server -- Python's `http.server` keeps nothing on disk by default). The live
+  dashboard shows whether the file log is on and its path.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

@@ -21,6 +21,7 @@ import html
 import json
 import os
 import secrets
+import threading
 import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -86,9 +87,20 @@ class LabState:
             "/old/": {"status": 200, "body": "old site", "ctype": "text/plain"},
             "/phpinfo.php": {"status": 200, "body": "phpinfo() OBLIQUITY-LAB", "ctype": "text/plain"},
         }
-        self.log: deque = deque(maxlen=800)
+        self.log: deque = deque(maxlen=2000)
         self.sessions: set[str] = set()
         self.verbose = False
+        self.access_log_path: str | None = None
+        self._lock = threading.Lock()
+
+    def write_access_log(self, line: str) -> None:
+        if not self.access_log_path:
+            return
+        try:
+            with self._lock, open(self.access_log_path, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            pass
 
     def load_config(self, path: str) -> None:
         data = json.loads(open(path, encoding="utf-8").read())
@@ -135,14 +147,22 @@ class Handler(BaseHTTPRequestHandler):
         pass  # we do our own logging
 
     # --- helpers ----------------------------------------------------------
-    def _record(self, status: int) -> None:
+    def _record(self, status: int, size: int) -> None:
         # don't log the admin log-poller or favicon -- keep the view to real traffic
         if self.path.startswith("/admin/logs.json") or self.path == "/favicon.ico":
             return
+        ip = self.client_address[0] if self.client_address else "-"
+        ua = (self.headers.get("User-Agent") or "-")
         STATE.log.append({"t": time.strftime("%H:%M:%S"), "m": self.command,
-                          "p": self.path[:120], "s": status})
+                          "p": self.path[:200], "s": status, "ip": ip,
+                          "ua": ua[:120], "sz": size})
         if STATE.verbose:
-            print(f"{time.strftime('%H:%M:%S')} {self.command} {self.path} -> {status}")
+            print(f"{time.strftime('%H:%M:%S')} {ip} {self.command} {self.path} -> {status} {size}b")
+        # Apache "combined"-style line to the real logfile, if configured.
+        STATE.write_access_log(
+            f'{ip} - - [{time.strftime("%d/%b/%Y:%H:%M:%S %z")}] '
+            f'"{self.command} {self.path} {self.request_version}" {status} {size} '
+            f'"{self.headers.get("Referer","-")}" "{ua}"')
 
     def _send(self, code: int, body: str, ctype: str = "text/html", cookie: str | None = None) -> None:
         data = body.encode("utf-8", "replace")
@@ -155,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
         if cookie:
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
-        self._record(code)
+        self._record(code, len(data))
         if self.command != "HEAD":
             self.wfile.write(data)
 
@@ -183,7 +203,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._authed():
                 self._send(403, "[]", "application/json")
             else:
-                self._send(200, json.dumps(list(STATE.log)[-120:][::-1]), "application/json")
+                self._send(200, json.dumps(list(STATE.log)[-150:][::-1]), "application/json")
+            return
+
+        if path == "/admin/log":
+            self._send(200, self._full_log_page())
             return
 
         if path == "/admin" or path == "/admin/":
@@ -312,10 +336,11 @@ class Handler(BaseHTTPRequestHandler):
         paths = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.paths)[:40])
         params = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.params))
         body = f"""<h1>Admin center</h1><p class=muted>Live request log + edit the site while a scan runs.</p>{note}
-<h2>Live request log</h2>
-<div class=card><table><thead><tr><th>time</th><th>method</th><th>path</th><th>status</th></tr></thead>
-<tbody id=log><tr><td colspan=4 class=muted>waiting for requests...</td></tr></tbody></table>
-<button onclick="fetch('/admin/clear-logs',{{method:'POST'}}).then(()=>0)">clear logs</button></div>
+<h2>Live request log &nbsp;<a href="/admin/log" style="font-size:13px">view full detailed log &rarr;</a></h2>
+<div class=card><table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>
+<tbody id=log><tr><td colspan=5 class=muted>waiting for requests...</td></tr></tbody></table>
+<button onclick="fetch('/admin/clear-logs',{{method:'POST'}}).then(()=>0)">clear logs</button>
+<span class=muted style="margin-left:12px;font-family:monospace;font-size:12px">{html.escape('access log file: ' + STATE.access_log_path if STATE.access_log_path else 'access log file: off (start with --access-log PATH)')}</span></div>
 <div class=cols>
 <div class=card><h2>Add a path (dir / file)</h2>
 <form method=post action=/admin/add-path>
@@ -337,10 +362,33 @@ class Handler(BaseHTTPRequestHandler):
 <script>
 const cls={{2:'s2',3:'s3',4:'s4',5:'s5'}};
 async function tick(){{try{{const r=await fetch('/admin/logs.json');const j=await r.json();
-document.getElementById('log').innerHTML=j.length?j.map(e=>`<tr><td>${{e.t}}</td><td>${{e.m}}</td><td>${{e.p}}</td><td class="${{cls[Math.floor(e.s/100)]||''}}">${{e.s}}</td></tr>`).join(''):'<tr><td colspan=4 class=muted>waiting for requests...</td></tr>';}}catch(e){{}}}}
+document.getElementById('log').innerHTML=j.length?j.map(e=>`<tr><td>${{e.t}}</td><td>${{e.ip}}</td><td>${{e.m}}</td><td>${{e.p}}</td><td class="${{cls[Math.floor(e.s/100)]||''}}">${{e.s}}</td></tr>`).join(''):'<tr><td colspan=5 class=muted>waiting for requests...</td></tr>';}}catch(e){{}}}}
 setInterval(tick,1000);tick();
 </script>"""
         return page("Admin", body)
+
+
+    def _full_log_page(self) -> str:
+        if not self._authed():
+            return page("Log", "<h1>Log</h1><div class=card><p class=muted>Please "
+                        f"<a href='{html.escape(STATE.login_path)}'>sign in</a>.</p></div>")
+        entries = list(STATE.log)[::-1]  # newest first
+        rows = "".join(
+            f"<tr><td>{e['t']}</td><td>{html.escape(e['ip'])}</td><td>{e['m']}</td>"
+            f"<td>{html.escape(e['p'])}</td>"
+            f"<td class='s{e['s']//100}'>{e['s']}</td><td>{e['sz']}</td>"
+            f"<td class=muted>{html.escape(e['ua'])}</td></tr>"
+            for e in entries) or "<tr><td colspan=7 class=muted>no requests yet</td></tr>"
+        loc = ("Written to disk at <code>" + html.escape(STATE.access_log_path) + "</code>"
+               if STATE.access_log_path else
+               "In-memory only (last 2000). Start with <code>--access-log &lt;path&gt;</code> to also write a real logfile.")
+        return page("Full log",
+            f"<h1>Request log</h1><p class=muted>{len(entries)} entries (newest first). {loc} "
+            "<a href='/admin'>&larr; back to admin</a></p>"
+            "<div class=card style='max-height:70vh;overflow:auto'>"
+            "<table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th>"
+            "<th>status</th><th>bytes</th><th>user-agent</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div>")
 
 
 def main() -> None:
@@ -349,8 +397,10 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1", help="bind address (keep it localhost)")
     ap.add_argument("--config", help="load a server profile JSON (see testlab/profiles/)")
     ap.add_argument("--verbose", action="store_true", help="also print each request to stdout")
+    ap.add_argument("--access-log", dest="access_log", help="also write an Apache-style access log to this file")
     args = ap.parse_args()
     STATE.verbose = args.verbose
+    STATE.access_log_path = args.access_log
     if args.config:
         STATE.load_config(args.config)
     srv = ThreadingHTTPServer((args.host, args.port), Handler)

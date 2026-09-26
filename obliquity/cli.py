@@ -1695,8 +1695,19 @@ def cmd_bust_resume(args) -> None:
     cmd_bust_run(args)
 
 
+def normalize_crack_target(conn, args) -> None:
+    """`crack plan/run` take an optional `project` then an optional `job`. If the
+    single positional given isn't an existing project (with an active project
+    set), treat it as the job name -- so `crack run md5` finds the job `md5`."""
+    proj = getattr(args, "project", None)
+    if proj and not getattr(args, "job", None) and get_project(conn, proj) is None:
+        args.job = proj
+        args.project = None
+
+
 def cmd_crack_plan(args) -> None:
     conn = connect(DB_PATH)
+    normalize_crack_target(conn, args)
     project = resolve_project(conn, args)
     apply_stored_options(conn, project, "crack", args)
     job = require_job(conn, project, args.job)
@@ -1707,6 +1718,7 @@ def cmd_crack_plan(args) -> None:
 
 def cmd_crack_run(args) -> None:
     conn = connect(DB_PATH)
+    normalize_crack_target(conn, args)
     project = resolve_project(conn, args)
     apply_stored_options(conn, project, "crack", args)
     job = require_job(conn, project, args.job)
