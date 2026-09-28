@@ -1045,6 +1045,21 @@ matches (documented by a new test).
   separate port); the content login stays purely a brute target, and its
   success page links to the console + reports.
 
+### 48. Live hashcat status + honest bust progress (2026-09-26)
+
+- **Live crack progress**: hashcat now runs with `--status --status-json
+  --status-timer 1`, and Obliquity parses the per-second status objects (from
+  its captured stdout) to show a **live bar with real percent, hash-rate,
+  recovered count, ETA, and GPU temp** during a crack -- instead of only a final
+  count. (hashcat prefixes each object with its interactive prompt; the parser
+  extracts the JSON from the first `{`.) `adapters/hashcat.parse_status/read_status`.
+- **Honest bust progress**: `live_progress_line` no longer shows a fixed,
+  misleading "Overall 67%" for the whole stage (it was `(stage-1)/total`). With
+  no within-stage percentage available (bust), it now reports stage granularity
+  honestly (`Stage 3/3 ... 2/3 stages done`); with a real percentage (crack) it
+  shows the live bar above.
+- 3 new tests (166 total, all green). Verified against real hashcat 7.1.2 output.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

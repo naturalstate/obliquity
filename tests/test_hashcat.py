@@ -2,8 +2,33 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from obliquity.adapters.hashcat import build_command, parse_output
+from obliquity.adapters.hashcat import build_command, parse_output, parse_status
 from obliquity.core.crackplan import CrackStage
+
+
+class StatusParseTests(TestCase):
+    # a real hashcat --status-json line is prefixed by its interactive prompt
+    LINE = ('[s]tatus [p]ause =>   {"session":"hashcat","status":3,'
+            '"progress":[250000000,1000000000],"recovered_hashes":[1,3],'
+            '"devices":[{"device_id":2,"device_name":"Apple M5","speed":3555808413,"temp":58}],'
+            '"estimated_stop":9999999999}')
+
+    def test_parses_prompt_prefixed_status(self):
+        s = parse_status(self.LINE)
+        self.assertIsNotNone(s)
+        self.assertAlmostEqual(s["percent"], 25.0)
+        self.assertEqual(s["speed"], 3555808413)
+        self.assertEqual((s["recovered"], s["recovered_total"]), (1, 3))
+        self.assertEqual(s["temp"], 58)
+        self.assertIsNotNone(s["eta"])
+
+    def test_uses_latest_of_several(self):
+        earlier = self.LINE.replace("250000000", "100000000")
+        s = parse_status(earlier + "\n" + self.LINE)
+        self.assertAlmostEqual(s["percent"], 25.0)  # last one wins
+
+    def test_none_when_no_status(self):
+        self.assertIsNone(parse_status("just some\nplain output\n"))
 
 
 class BuildCommandTests(TestCase):

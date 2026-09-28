@@ -167,12 +167,14 @@ def run_crackplan(
 
         def report_progress(elapsed: float) -> None:
             if event_callback:
+                status = hashcat.read_status(raw_output)  # live progress from --status-json
                 event_callback(
                     {
                         **common,
                         "action": "progress",
                         "elapsed": elapsed,
                         "findings": count_cracked(),
+                        "status": status,
                     }
                 )
 

@@ -113,17 +113,41 @@ def progress_bar(percent: int, width: int = 20) -> str:
     return f"[{'#' * filled}{'-' * (width - filled)}]"
 
 
+def format_speed(hps: float) -> str:
+    for unit, div in (("GH/s", 1e9), ("MH/s", 1e6), ("kH/s", 1e3)):
+        if hps >= div:
+            return f"{hps / div:.1f} {unit}"
+    return f"{int(hps)} H/s"
+
+
 def live_progress_line(event: dict) -> str:
+    elapsed = float(event.get("elapsed") or 0)
+    spinner = c(SPINNER[int(elapsed * 10) % len(SPINNER)], "yellow", bold=True)
     total = max(1, int(event.get("total_stages") or 1))
     current = max(1, int(event.get("stage_number") or 1))
-    percent = round((current - 1) * 100 / total)
-    elapsed = float(event.get("elapsed") or 0)
-    spinner = SPINNER[int(elapsed * 10) % len(SPINNER)]
-    bar = c(progress_bar(percent), "cyan", bold=True)
     stage = event.get("stage") or "unknown"
+
+    # When the tool gives a real percentage (hashcat --status-json), show it --
+    # a live bar for THIS stage plus speed / recovered / ETA / temp.
+    status = event.get("status")
+    if status and status.get("percent") is not None:
+        pct = int(round(status["percent"]))
+        parts = [f"{spinner} Stage {current}/{total}: {stage}",
+                 f"{c(progress_bar(pct), 'cyan', bold=True)} {pct:3d}%"]
+        if status.get("speed"):
+            parts.append(format_speed(status["speed"]))
+        parts.append(f"rec {status.get('recovered', 0)}/{status.get('recovered_total', 0)}")
+        if status.get("eta") is not None:
+            parts.append(f"ETA {elapsed_time(status['eta'])}")
+        if status.get("temp") is not None:
+            parts.append(f"{int(status['temp'])}°C")
+        return "  ".join(parts)
+
+    # No within-stage percentage available (e.g. bust). Report honestly at
+    # stage granularity instead of a fixed, misleading "overall %".
     findings = int(event.get("findings") or 0)
     return (
-        f"{c(spinner, 'yellow', bold=True)} Stage {current}/{total}: {stage}  "
-        f"Overall {bar} {percent:3d}%  "
+        f"{spinner} Stage {current}/{total}: {stage}  "
+        f"{current - 1}/{total} stages done  "
         f"Elapsed {elapsed_time(elapsed)}  Findings {findings}"
     )
