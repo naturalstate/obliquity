@@ -589,6 +589,10 @@ def print_run_event(event: dict) -> None:
         print(c(f"  > {n}", "green", bold=True) + c(f"   {wl}", "cyan") + extbit + retry)
         return
 
+    if action == "ferox_ui":
+        print(c("    feroxbuster live — press [ENTER] for its scan menu, Ctrl-C to stop", "gray"))
+        return
+
     if action == "reflood":
         print(c(f"  ~ {n}  re-running with status {event.get('status')} filtered "
                 f"({event.get('count')}/{event.get('total')} were {event.get('status')})", "yellow"))
@@ -1672,6 +1676,7 @@ def cmd_bust_run(args) -> None:
         flood_prompt=bust_flood_prompt,
         headers=args.header or [],
         event_callback=print_run_event,
+        ferox_ui=getattr(args, "ferox_ui", False),
     )
 
     completed = sum(1 for item in results if item.get("status") == "completed")
@@ -2631,6 +2636,8 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_scan_args.add_argument("--no-flood-guard", action="store_true", help="disable mid-run flood detection")
     bust_scan_args.add_argument("--no-extract-links", action="store_true",
                                 help="disable feroxbuster's link extraction (it parses response bodies for URLs and requests them; on by default) for every stage")
+    bust_scan_args.add_argument("--ferox-ui", dest="ferox_ui", action="store_true",
+                                help="show feroxbuster's own live UI (pinned results, progress bars, clickable URLs, and its Scan Management Menu via ENTER) during each stage, banner suppressed, instead of Obliquity's one-line progress")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

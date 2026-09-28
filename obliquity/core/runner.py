@@ -6,11 +6,14 @@ from collections.abc import Callable
 from pathlib import Path
 from sqlite3 import Connection, Row
 
+import sys
+
 from obliquity.adapters.feroxbuster import (
     FLOOD_ABORT_EXIT,
     build_command,
     parse_json_output,
     require_feroxbuster,
+    run_passthrough,
     run_with_progress as run_command,
 )
 from obliquity.core.database import (
@@ -162,12 +165,16 @@ def run_gameplan(
     event_callback: EventCallback | None = None,
     flood_threshold: int = 0,
     flood_prompt: Callable[[dict], bool] | None = None,
+    ferox_ui: bool = False,
 ) -> list[dict]:
     if not dry_run:
         require_feroxbuster()
     results: list[dict] = []
     url = host["url"]
     total_stages = len(gameplan.stages)
+    # feroxbuster's native pinned UI needs to own a real terminal (stdin+stdout);
+    # off a TTY (piped, tests, the REPL) we fall back to the parsed progress line.
+    interactive_ui = ferox_ui and sys.stdin.isatty() and sys.stdout.isatty()
 
     for idx, stage in enumerate(gameplan.stages, start=1):
         fingerprint = fingerprint_stage(url, gameplan, stage, project_id=project["id"])
@@ -225,6 +232,25 @@ def run_gameplan(
             if event_callback:
                 event_callback({**common, "action": "starting"})
             mark_run_started(conn, run["id"])
+
+            if interactive_ui:
+                # Hand the terminal to feroxbuster's native UI (banner suppressed).
+                # No Obliquity progress line or flood prompt here -- feroxbuster's
+                # own auto-filtering and Scan Management Menu take over for the
+                # stage. Findings are still read from the --output JSON afterward.
+                if event_callback:
+                    event_callback({**common, "action": "ferox_ui"})
+                exit_code, error = run_passthrough(cmd, raw_output)
+                status = ("completed" if exit_code == 0
+                          else "interrupted" if exit_code in (130, 2) else "failed")
+                mark_run_finished(conn, run["id"], exit_code, status, error)
+                inserted = insert_findings(conn, parse_json_output(
+                    json_output, run_id=run["id"], project_id=project["id"],
+                    host_id=host["id"], source=stage.name))
+                item = {**common, "action": "ran", "status": status,
+                        "exit_code": exit_code, "new_findings": inserted, "error": error}
+                break
+
             count_findings = live_finding_counter(json_output)
             tally = live_status_tally(json_output)
 

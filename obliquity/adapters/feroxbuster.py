@@ -153,6 +153,8 @@ def run_command(
 # looks like:  [####>---------------] - 3s   142/438   0s   found:7   errors:0
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _BAR_RE = re.compile(r"\[[#>\s\-]{3,}\].*?(\d+)\s*/\s*(\d+)")
+# A result row feroxbuster prints, e.g. "200      GET   1l   2w   11c http://..."
+_RESULT_RE = re.compile(r"^\s*\d{3}\s+[A-Z]{3,7}\b")
 
 # Two-arg progress callback: (elapsed_seconds, parsed_progress_or_None).
 LiveProgressCallback = Callable[[float, "dict | None"], None]
@@ -285,6 +287,118 @@ def run_with_progress(
     if progress_callback:
         progress_callback(time.monotonic() - started, parse_progress(tail) if tail else None)
     if code != 0:
+        return code, f"feroxbuster exited with code {code}"
+    return code, None
+
+
+def _banner_end_offset(buf: bytes) -> int | None:
+    """Byte offset of the first results/progress-bar line in `buf`, i.e. where
+    feroxbuster's startup banner ends. None while only banner has arrived."""
+    pos = 0
+    for line in buf.split(b"\n"):
+        stripped = _ANSI_RE.sub("", line.decode("utf-8", "replace"))
+        if _BAR_RE.search(stripped) or _RESULT_RE.search(stripped):
+            return pos
+        pos += len(line) + 1  # + the newline we split on
+    return None
+
+
+def run_passthrough(cmd: list[str], raw_output: Path) -> tuple[int, str | None]:
+    """Run feroxbuster attached to the real terminal so its native pinned UI --
+    scrolling results, progress bars, clickable URLs, and the Scan Management
+    Menu -- is shown live, with only the startup banner suppressed. Keystrokes
+    are forwarded so the menu works; findings are still written to the --output
+    JSON. Requires a TTY on stdin+stdout (callers gate on that); returns the same
+    (exit_code, error) contract as run_command."""
+    import fcntl
+    import pty
+    import select
+    import signal
+    import termios
+    import tty
+
+    raw_output.parent.mkdir(parents=True, exist_ok=True)
+    stdin_fd, stdout_fd = 0, 1
+
+    pid, master = pty.fork()
+    if pid == 0:  # child
+        try:
+            os.execvp(cmd[0], cmd)
+        except OSError:
+            os._exit(127)
+
+    def _sync_winsize(*_) -> None:
+        try:
+            sz = fcntl.ioctl(stdout_fd, termios.TIOCGWINSZ, b"\0" * 8)
+            fcntl.ioctl(master, termios.TIOCSWINSZ, sz)
+        except OSError:
+            pass
+
+    _sync_winsize()
+    try:
+        old_attr = termios.tcgetattr(stdin_fd)
+        tty.setcbreak(stdin_fd)  # cbreak (not raw) keeps Ctrl-C -> SIGINT for us
+    except (termios.error, ValueError, OSError):
+        old_attr = None
+    try:
+        signal.signal(signal.SIGWINCH, _sync_winsize)
+    except (ValueError, OSError):
+        pass
+
+    forwarding = False
+    pending = b""
+    handle = raw_output.open("wb")
+    try:
+        while True:
+            try:
+                readable, _, _ = select.select([master, stdin_fd], [], [], 0.1)
+            except (OSError, ValueError):
+                break
+            if master in readable:
+                try:
+                    data = os.read(master, 65536)
+                except OSError:  # EIO -- child exited
+                    data = b""
+                if not data:
+                    break
+                handle.write(data)
+                if forwarding:
+                    os.write(stdout_fd, data)
+                else:
+                    pending += data
+                    offset = _banner_end_offset(pending)
+                    if offset is not None:
+                        os.write(stdout_fd, pending[offset:])
+                        pending = b""
+                        forwarding = True
+            if stdin_fd in readable:
+                try:
+                    keys = os.read(stdin_fd, 4096)
+                except OSError:
+                    keys = b""
+                if keys:
+                    os.write(master, keys)
+    except KeyboardInterrupt:
+        _terminate_pid(pid)
+    finally:
+        handle.close()
+        if old_attr is not None:
+            try:
+                termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_attr)
+            except (termios.error, OSError):
+                pass
+        try:
+            signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+        except (ValueError, OSError):
+            pass
+        os.write(stdout_fd, b"\n")  # leave the cursor on a fresh line
+
+    try:
+        _, wstatus = os.waitpid(pid, 0)
+        code = os.waitstatus_to_exitcode(wstatus)
+    except ChildProcessError:
+        code = 0
+    if code not in (0, 130):
         return code, f"feroxbuster exited with code {code}"
     return code, None
 

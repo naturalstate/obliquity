@@ -495,6 +495,23 @@ Tune or disable it with `--flood-threshold N` (default 250; the re-run is a
 distinct, fingerprinted run) or `--no-flood-guard`. In non-interactive runs it
 auto-re-runs filtered and says so.
 
+**Live progress**: during a run each stage shows an animated bar driven by
+feroxbuster's *real* request counter (parsed from its output over a PTY) --
+percent, requests done, findings, and errors, updating as it goes. Prefer
+feroxbuster's own full interactive UI? Add `--ferox-ui`:
+
+```bash
+obliquity bust run acme --ferox-ui
+```
+
+Each stage then hands the terminal to feroxbuster's native display -- pinned
+progress bars, scrolling results, clickable URLs, and its Scan Management Menu
+(press `ENTER` to add a URL/filter, cancel a sub-scan, or set a scan limit) --
+with the startup banner suppressed. Obliquity still prints its own stage header
+before and one-line summary after each stage, so the orchestration stays
+visible. Off a real terminal (piped output, the REPL) it falls back to the
+one-line progress automatically.
+
 **Link extraction (discovery multiplier)**: feroxbuster parses every response
 body (HTML, JavaScript, `robots.txt`, ...) for URLs and folds the ones it finds
 back into the scan. This reaches paths that live in *no* wordlist -- an admin
