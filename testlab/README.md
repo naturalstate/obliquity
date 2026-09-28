@@ -108,7 +108,9 @@ obliquity bust run --gameplan generic-quick       # finds admin, backup, config.
 obliquity bust run --gameplan generic-standard    # bigger pass
 obliquity bust run --gameplan generic-quick --filter-status 404   # noise control
 obliquity bust resume --gameplan generic-standard # skip completed stages
-# flood guard: restart the web target with  OBLIQUITY_LAB_WILDCARD=1  then:
+# flood guard: OBLIQUITY_LAB_WILDCARD=1 makes EVERY content path return 200
+# (a "wildcard"/soft-404 host). /admin and /login still work so you can watch it.
+# restart the web target with  OBLIQUITY_LAB_WILDCARD=1  then:
 obliquity bust run --gameplan generic-quick       # every path 200 -> detects flood, offers re-run
 
 # --- fuzz (parameters) ----------------------------------------------------

@@ -1001,6 +1001,18 @@ matches (documented by a new test).
 - (`--port` for the web target already existed; documented alongside the new
   flags.)
 
+### 45. Lab wildcard keeps /admin usable; clickable report links; reports_url in config (2026-09-26)
+
+- **Wildcard mode fix**: `OBLIQUITY_LAB_WILDCARD=1` now floods only *content*
+  paths with 200; `/admin*` and the login path stay real, so the admin center
+  and live log remain usable while you watch the flood guard trigger.
+- **Clickable report links**: the report-browser URL on the post-login page and
+  in the admin center is now an actual link (was plain text), alongside the
+  existing pill links.
+- **Config-controlled reports URL**: a profile/config JSON can set `reports_url`
+  (in addition to the `--reports-url` flag), so a single file can carry both the
+  mimicked site and where the report links point.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

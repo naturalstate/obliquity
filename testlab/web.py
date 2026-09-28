@@ -114,6 +114,8 @@ class LabState:
             self.login_path = data["login_path"]
         if "fail_marker" in data:
             self.fail_marker = data["fail_marker"]
+        if "reports_url" in data:  # a config file can point the reports links anywhere
+            self.reports_url = data["reports_url"]
         if "creds" in data:
             self.creds = [list(c) for c in data["creds"]]
         if data.get("params"):
@@ -213,7 +215,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if os.environ.get("OBLIQUITY_LAB_WILDCARD"):
+        # Wildcard / soft-404 mode: every *content* path returns 200 (to test the
+        # flood guard) -- but keep the admin center and login usable so you can
+        # still watch the flood happen.
+        if os.environ.get("OBLIQUITY_LAB_WILDCARD") and not (
+            path.startswith("/admin") or path == STATE.login_path
+        ):
             self._send(200, f"wildcard 200 for {path}")
             return
 
@@ -290,8 +297,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"<a class=pill href='{html.escape(STATE.reports_url)}' target=_blank>&rarr; Obliquity reports</a> "
                 f"<a class=pill href='{html.escape(STATE.login_path)}'>sign out</a></div>"
                 f"<p class=muted style='margin-top:12px'>Reports open the report browser at "
-                f"<code>{html.escape(STATE.reports_url)}</code> -- start it with "
-                "<code>obliquity report serve</code> first.</p></div>",
+                f"<a href='{html.escape(STATE.reports_url)}' target=_blank>{html.escape(STATE.reports_url)}</a> "
+                "-- start it with <code>obliquity report serve</code> first.</p></div>",
             ), cookie=f"labsession={token}; Path=/")
         else:
             self._send(200, page("Sign in",
@@ -372,7 +379,7 @@ class Handler(BaseHTTPRequestHandler):
 <a class=pill href="{html.escape(STATE.reports_url)}" target=_blank>&rarr; Obliquity reports</a>
 <a class=pill href="/admin/log">&rarr; full detailed log</a>
 <a class=pill href="{html.escape(STATE.login_path)}">sign out</a></div>
-<p class=muted style="font-size:12px">Reports open <code>{html.escape(STATE.reports_url)}</code> -- run <code>obliquity report serve</code> first.</p>{note}
+<p class=muted style="font-size:12px">Reports open <a href="{html.escape(STATE.reports_url)}" target=_blank>{html.escape(STATE.reports_url)}</a> -- run <code>obliquity report serve</code> first.</p>{note}
 <h2>Live request log &nbsp;<a href="/admin/log" style="font-size:13px">view full detailed log &rarr;</a></h2>
 <div class=card><table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>
 <tbody id=log><tr><td colspan=5 class=muted>waiting for requests...</td></tr></tbody></table>
