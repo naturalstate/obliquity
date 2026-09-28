@@ -63,6 +63,11 @@ button{margin-top:14px;background:var(--accent);color:#04231f;border:0;border-ra
 code{color:#f0883e;font-family:monospace;} footer{margin-top:40px;color:var(--muted);font-size:12px;font-family:monospace;}
 table{width:100%;border-collapse:collapse;font-family:monospace;font-size:13px;}
 th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap;} th{color:var(--muted);}
+/* Fixed column widths so the colored status column always shows and rows stay
+   one line high -- the long path is the only cell allowed to wrap/ellipsis. */
+table.log{table-layout:fixed;}
+table.log td,table.log th{overflow:hidden;text-overflow:ellipsis;}
+table.log td.p{white-space:nowrap;} table.log td.s{text-align:right;font-weight:700;}
 .s2{color:#00e676}.s3{color:#58a6ff}.s4{color:#ffb84d}.s5{color:#ff5f5f}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;} @media(max-width:680px){.cols{grid-template-columns:1fr}}
 """
@@ -133,6 +138,21 @@ class LabState:
                 fh.write(line + "\n")
         except OSError:
             pass
+
+    def current_config(self) -> dict:
+        """The live server config in the same shape apply_config() accepts, so the
+        admin textarea shows what's actually loaded (and round-trips on import)."""
+        return {
+            "server": dict(self.server),
+            "login_path": self.login_path,
+            "fail_marker": self.fail_marker,
+            "creds": [list(c) for c in self.creds],
+            "params": sorted(self.params),
+            "paths": {p: dict(spec) for p, spec in self.paths.items()},
+        }
+
+    def current_config_json(self) -> str:
+        return json.dumps(self.current_config(), indent=2, sort_keys=True)
 
     def load_config(self, path: str) -> None:
         self.apply_config(json.loads(open(path, encoding="utf-8").read()))
@@ -361,9 +381,20 @@ class ContentHandler(_Base):
 _LOG_JS = """
 const cls={2:'s2',3:'s3',4:'s4',5:'s5'};
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function rows(j){return j.length?j.map(e=>`<tr><td>${e.t}</td><td>${esc(e.ip)}</td><td>${e.m}</td><td>${esc(e.p)}</td><td class="${cls[Math.floor(e.s/100)]||''}">${e.s}</td></tr>`).join(''):'<tr><td colspan=5 class=muted>waiting for requests...</td></tr>';}
+function rows(j){return j.length?j.map(e=>`<tr><td>${e.t}</td><td>${esc(e.ip)}</td><td>${e.m}</td><td class=p title="${esc(e.p)}">${esc(e.p)}</td><td class="s ${cls[Math.floor(e.s/100)]||''}">${e.s}</td></tr>`).join(''):'<tr><td colspan=5 class=muted>waiting for requests...</td></tr>';}
 async function poll(url,el,cnt){try{const r=await fetch(url);const j=await r.json();if(cnt)document.getElementById(cnt).textContent='('+j.length.toLocaleString()+' shown)';document.getElementById(el).innerHTML=rows(j);}catch(e){}}
 """
+
+# Shared fixed-width columns so the dashboard sample log and the /log detail page
+# render identically (same widths, colored status column always visible).
+_LOG_COLGROUP = ("<colgroup><col style='width:82px'><col style='width:120px'>"
+                 "<col style='width:58px'><col><col style='width:60px'></colgroup>")
+_LOG_HEAD = "<thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>"
+
+
+def _log_table(tbody_id: str) -> str:
+    return (f"<table class=log>{_LOG_COLGROUP}{_LOG_HEAD}"
+            f"<tbody id={tbody_id}><tr><td colspan=5 class=muted>waiting for requests...</td></tr></tbody></table>")
 
 
 class AdminHandler(_Base):
@@ -440,8 +471,7 @@ class AdminHandler(_Base):
             "<h1>Request log <span id=count class=muted style='font-size:15px'></span></h1>"
             f"<p class=muted>Newest first, live. {loc} <a href='/'>&larr; back to console</a></p>"
             "<div class=card style='max-height:80vh;overflow:auto'>"
-            "<table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>"
-            "<tbody id=full><tr><td colspan=5 class=muted>loading...</td></tr></tbody></table></div>"
+            + _log_table("full") + "</div>"
             "<script>" + _LOG_JS + "setInterval(()=>poll('/log.json','full','count'),1500);poll('/log.json','full','count');</script>")
 
     def _dashboard(self, banner: str = "") -> str:
@@ -450,15 +480,12 @@ class AdminHandler(_Base):
         params = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.params))
         profile_options = "<option value=''>-- pick --</option>" + "".join(
             f"<option value='{html.escape(n)}'>{html.escape(n)}</option>" for n in _profile_names())
+        current_config = html.escape(STATE.current_config_json())
         body = f"""<h1>Admin console</h1>
-<p class=muted>Operator console (separate port; never scanned or logged). Content server request log below.</p>
+<p class=muted>Operator console (separate port; never scanned or logged). Shape the target above; the content server's live request log is at the bottom.</p>
 <div class=grid style="margin:6px 0 4px">
 <a class=pill href="{html.escape(STATE.reports_url)}" target=_blank>&rarr; Obliquity reports</a>
 <a class=pill href="/log">&rarr; full detailed log</a></div>{note}
-<h2>Live request log <span class=muted style="font-size:13px">(latest 40 &middot; <a href="/log">see all</a>)</span></h2>
-<div class=card><table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>
-<tbody id=log><tr><td colspan=5 class=muted>waiting for requests...</td></tr></tbody></table>
-<button onclick="fetch('/clear-logs',{{method:'POST'}}).then(()=>0)">clear logs</button></div>
 <div class=cols>
 <div class=card><h2>Add a path (dir / file)</h2>
 <form method=post action=/add-path>
@@ -477,12 +504,15 @@ class AdminHandler(_Base):
 <form method=post action=/import>
 <label>...or choose a .json file from your computer</label>
 <input type=file accept=".json,application/json" id=cfgfile>
-<label style="margin-top:8px">...or paste JSON</label>
-<textarea name=config id=config rows=5 placeholder='{{"paths":{{"/wp-admin/":{{"status":302}}}},"params":["s","p"]}}'></textarea>
+<label style="margin-top:8px">Current config (edit &amp; re-import to change)</label>
+<textarea name=config id=config rows=10 spellcheck=false>{current_config}</textarea>
 <button>Import config</button></form></div>
 </div>
 <h2>Current paths ({len(STATE.paths)})</h2><div class=card><div class=grid>{paths}</div></div>
 <h2>Current params ({len(STATE.params)})</h2><div class=card><div class=grid>{params}</div></div>
+<h2>Live request log <span class=muted style="font-size:13px">(latest 40 &middot; <a href="/log">see all</a>)</span></h2>
+<div class=card>{_log_table("log")}
+<button onclick="fetch('/clear-logs',{{method:'POST'}}).then(()=>0)">clear logs</button></div>
 <script>{_LOG_JS}
 setInterval(()=>poll('/logs.json','log'),1000);poll('/logs.json','log');
 const _cf=document.getElementById('cfgfile');
