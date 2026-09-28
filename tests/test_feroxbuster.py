@@ -3,8 +3,35 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from obliquity.adapters.feroxbuster import build_command, run_command, terminate_process
+from obliquity.adapters.feroxbuster import build_command, parse_progress, run_command, terminate_process
 from obliquity.core.gameplan import Stage
+
+
+class ParseProgressTests(TestCase):
+    # a real feroxbuster bar line, ANSI cursor codes and all
+    LINE = ("\x1b[2K\x1b[1A[####>---------------] - 0s         4/17      0s"
+            "      found:1       errors:0                     \x1b[1A")
+
+    def test_parses_done_total_found_errors(self) -> None:
+        p = parse_progress(self.LINE)
+        self.assertIsNotNone(p)
+        self.assertEqual((p["done"], p["total"]), (4, 17))
+        self.assertEqual(p["found"], 1)
+        self.assertEqual(p["errors"], 0)
+        self.assertAlmostEqual(p["percent"], 4 / 17 * 100.0)
+
+    def test_prefers_aggregate_bar_with_largest_total(self) -> None:
+        text = ("[##>-----] - 0s 2/8 0s found:1 errors:0\n"
+                "[#>------] - 0s 9/40 0s found:3 errors:0\n")
+        p = parse_progress(text)
+        self.assertEqual((p["done"], p["total"]), (9, 40))
+        self.assertEqual(p["found"], 3)
+
+    def test_none_before_any_bar(self) -> None:
+        self.assertIsNone(parse_progress("just a banner\nno bars yet\n"))
+
+    def test_percent_never_exceeds_100(self) -> None:
+        self.assertEqual(parse_progress("[####] - 1s 23/23 0s found:5 errors:0")["percent"], 100.0)
 
 
 class BuildCommandTests(TestCase):

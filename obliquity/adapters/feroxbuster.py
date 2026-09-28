@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import time
@@ -38,7 +40,6 @@ def build_command(
         "--wordlist", stage.wordlist,
         "--json",
         "--output", str(json_output),
-        "--silent",
         "--no-state",
     ]
 
@@ -144,6 +145,148 @@ def run_command(
     if proc.returncode != 0:
         return proc.returncode, f"feroxbuster exited with code {proc.returncode}"
     return proc.returncode, None
+
+
+# --- live progress -----------------------------------------------------------
+# feroxbuster only renders its progress bar to a TTY, so the bust runner drives
+# it through a PTY (run_with_progress below) and parses the bar. A rendered line
+# looks like:  [####>---------------] - 3s   142/438   0s   found:7   errors:0
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_BAR_RE = re.compile(r"\[[#>\s\-]{3,}\].*?(\d+)\s*/\s*(\d+)")
+
+# Two-arg progress callback: (elapsed_seconds, parsed_progress_or_None).
+LiveProgressCallback = Callable[[float, "dict | None"], None]
+
+
+def parse_progress(text: str) -> dict | None:
+    """Extract the latest feroxbuster progress from captured (PTY) output.
+
+    Returns ``{percent, done, total, found, errors}`` for the aggregate bar
+    (the one with the largest total -- feroxbuster's overall counter), or None
+    if no bar has rendered yet."""
+    text = _ANSI_RE.sub("", text)
+    best: tuple[int, int] | None = None
+    found = errors = None
+    for seg in re.split(r"[\r\n]", text):
+        m = _BAR_RE.search(seg)
+        if not m:
+            continue
+        done, total = int(m.group(1)), int(m.group(2))
+        if total <= 0:
+            continue
+        # Prefer the aggregate bar (largest total); on a tie, the later segment
+        # wins because we iterate the buffer in render order (most recent last).
+        if best is None or total >= best[1]:
+            best = (done, total)
+            fm = re.search(r"found:\s*(\d+)", seg)
+            em = re.search(r"errors:\s*(\d+)", seg)
+            found = int(fm.group(1)) if fm else found
+            errors = int(em.group(1)) if em else errors
+    if best is None:
+        return None
+    done, total = best
+    return {
+        "percent": min(100.0, done / total * 100.0),
+        "done": done,
+        "total": total,
+        "found": found,
+        "errors": errors,
+    }
+
+
+def _terminate_pid(pid: int) -> None:
+    import signal
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    for _ in range(30):  # up to ~3s for a graceful exit
+        try:
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                return
+        except ChildProcessError:
+            return
+        time.sleep(0.1)
+    try:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    except (ProcessLookupError, ChildProcessError):
+        pass
+
+
+def run_with_progress(
+    cmd: list[str],
+    raw_output: Path,
+    progress_callback: LiveProgressCallback | None = None,
+    abort_check: Callable[[float], str | None] | None = None,
+) -> tuple[int, str | None]:
+    """Run feroxbuster under a PTY so its real progress bar renders, parsing it
+    into a live percentage / found / errors for the caller. Same contract as
+    run_command otherwise (FLOOD_ABORT_EXIT on abort, 130 on Ctrl-C). Falls back
+    to the plain runner where a PTY isn't available."""
+    raw_output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import pty
+        import select
+    except ImportError:  # no PTY on this platform -- degrade gracefully.
+        wrapped = (lambda e: progress_callback(e, None)) if progress_callback else None
+        return run_command(cmd, raw_output, wrapped, abort_check=abort_check)
+
+    try:
+        pid, fd = pty.fork()
+    except OSError:
+        wrapped = (lambda e: progress_callback(e, None)) if progress_callback else None
+        return run_command(cmd, raw_output, wrapped, abort_check=abort_check)
+
+    if pid == 0:  # child
+        try:
+            os.execvp(cmd[0], cmd)
+        except OSError:
+            os._exit(127)
+
+    started = time.monotonic()
+    tail = ""
+    handle = raw_output.open("w", encoding="utf-8", errors="replace")
+    try:
+        while True:
+            elapsed = time.monotonic() - started
+            try:
+                readable, _, _ = select.select([fd], [], [], 0.1)
+            except (OSError, ValueError):
+                break
+            if readable:
+                try:
+                    chunk = os.read(fd, 8192)
+                except OSError:  # EIO: child closed the PTY (it exited)
+                    chunk = b""
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", "replace")
+                handle.write(_ANSI_RE.sub("", text))
+                tail = (tail + text)[-16384:]
+            if progress_callback:
+                progress_callback(elapsed, parse_progress(tail) if tail else None)
+            if abort_check is not None:
+                reason = abort_check(elapsed)
+                if reason:
+                    _terminate_pid(pid)
+                    return FLOOD_ABORT_EXIT, reason
+    except KeyboardInterrupt:
+        _terminate_pid(pid)
+        return 130, "feroxbuster was interrupted by the user"
+    finally:
+        handle.close()
+
+    try:
+        _, wstatus = os.waitpid(pid, 0)
+        code = os.waitstatus_to_exitcode(wstatus)
+    except ChildProcessError:
+        code = 0
+    if progress_callback:
+        progress_callback(time.monotonic() - started, parse_progress(tail) if tail else None)
+    if code != 0:
+        return code, f"feroxbuster exited with code {code}"
+    return code, None
 
 
 def _extract_field(obj: dict, *names: str):

@@ -127,25 +127,35 @@ def live_progress_line(event: dict) -> str:
     current = max(1, int(event.get("stage_number") or 1))
     stage = event.get("stage") or "unknown"
 
-    # When the tool gives a real percentage (hashcat --status-json), show it --
-    # a live bar for THIS stage plus speed / recovered / ETA / temp.
+    # When the tool gives a real percentage, show a live animated bar for THIS
+    # stage. hashcat (--status-json) reports speed/recovered/ETA/temp; feroxbuster
+    # (parsed from its PTY progress bar) reports requests done / found / errors.
     status = event.get("status")
+    findings = int(event.get("findings") or 0)
     if status and status.get("percent") is not None:
         pct = int(round(status["percent"]))
         parts = [f"{spinner} Stage {current}/{total}: {stage}",
                  f"{c(progress_bar(pct), 'cyan', bold=True)} {pct:3d}%"]
-        if status.get("speed"):
-            parts.append(format_speed(status["speed"]))
-        parts.append(f"rec {status.get('recovered', 0)}/{status.get('recovered_total', 0)}")
-        if status.get("eta") is not None:
-            parts.append(f"ETA {elapsed_time(status['eta'])}")
-        if status.get("temp") is not None:
-            parts.append(f"{int(status['temp'])}°C")
+        if status.get("kind") == "bust":
+            done, tot = status.get("done"), status.get("total")
+            if tot:
+                parts.append(f"{done}/{tot} reqs")
+            parts.append(f"found {findings}")
+            if status.get("errors"):
+                parts.append(f"err {status['errors']}")
+            parts.append(f"Elapsed {elapsed_time(elapsed)}")
+        else:
+            if status.get("speed"):
+                parts.append(format_speed(status["speed"]))
+            parts.append(f"rec {status.get('recovered', 0)}/{status.get('recovered_total', 0)}")
+            if status.get("eta") is not None:
+                parts.append(f"ETA {elapsed_time(status['eta'])}")
+            if status.get("temp") is not None:
+                parts.append(f"{int(status['temp'])}°C")
         return "  ".join(parts)
 
-    # No within-stage percentage available (e.g. bust). Report honestly at
-    # stage granularity instead of a fixed, misleading "overall %".
-    findings = int(event.get("findings") or 0)
+    # No within-stage percentage yet (bar hasn't rendered, or no PTY). Report
+    # honestly at stage granularity instead of a fixed, misleading "overall %".
     return (
         f"{spinner} Stage {current}/{total}: {stage}  "
         f"{current - 1}/{total} stages done  "

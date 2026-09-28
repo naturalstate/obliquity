@@ -11,7 +11,7 @@ from obliquity.adapters.feroxbuster import (
     build_command,
     parse_json_output,
     require_feroxbuster,
-    run_command,
+    run_with_progress as run_command,
 )
 from obliquity.core.database import (
     create_or_update_run,
@@ -228,9 +228,21 @@ def run_gameplan(
             count_findings = live_finding_counter(json_output)
             tally = live_status_tally(json_output)
 
-            def report_progress(elapsed: float, _common=common, _count=count_findings) -> None:
-                if event_callback:
-                    event_callback({**_common, "action": "progress", "elapsed": elapsed, "findings": _count()})
+            def report_progress(elapsed: float, progress: dict | None = None,
+                                _common=common, _count=count_findings) -> None:
+                if not event_callback:
+                    return
+                event = {**_common, "action": "progress", "elapsed": elapsed, "findings": _count()}
+                if progress and progress.get("total"):
+                    # feroxbuster's own live counter -> a real percentage.
+                    event["status"] = {
+                        "kind": "bust",
+                        "percent": progress["percent"],
+                        "done": progress["done"],
+                        "total": progress["total"],
+                        "errors": progress.get("errors"),
+                    }
+                event_callback(event)
 
             # Only guard on the first attempt (a filtered re-run shouldn't flood again).
             abort_check = None
