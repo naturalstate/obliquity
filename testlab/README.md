@@ -66,8 +66,20 @@ python3 -m testlab.web --verbose                                  # also print e
 python3 -m testlab.web --access-log testlab/fixtures/access.log   # also write a real Apache-style logfile
 ```
 
-Write your own profile (Joomla, Drupal, IIS/ASP.NET, an API, a client's stack)
-using the format in [`testlab/profiles/README.md`](profiles/README.md).
+Ships ready-made profiles for **WordPress, Joomla, Drupal, IIS/ASP.NET, and a
+JSON API** -- write your own for a client's exact stack using the format in
+[`testlab/profiles/README.md`](profiles/README.md).
+
+Handy web-target flags: `--port <n>` (default 8000), `--config <profile>`,
+`--access-log <file>`, `--verbose`, and `--reports-url <url>` (where the
+"Obliquity reports" links point; default `http://127.0.0.1:8787/`, i.e.
+`obliquity report serve`). After you log in, the page and the admin center both
+link straight to the report browser.
+
+> The web server may print `BrokenPipeError` lines during a scan on some setups
+> -- that's **normal**: scanners open many connections and close them early. The
+> server ignores them; they don't affect results. (Silenced as of the latest
+> version.)
 
 ---
 

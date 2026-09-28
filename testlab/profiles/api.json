@@ -1,0 +1,17 @@
+{
+  "server": {"name": "Acme API Gateway", "header": "nginx/1.25.3"},
+  "login_path": "/api/v1/auth/login",
+  "fail_marker": "invalid_credentials",
+  "creds": [["admin", "password123"], ["service", "letmein"]],
+  "params": ["limit", "offset", "sort", "order", "filter", "fields", "api_key", "token", "expand"],
+  "paths": {
+    "/api/v1/": {"status": 200, "body": "{\"versions\":[\"v1\",\"v2\"]}", "ctype": "application/json"},
+    "/api/v1/users": {"status": 401, "body": "{\"error\":\"unauthorized\"}", "ctype": "application/json"},
+    "/api/v2/": {"status": 200, "body": "{\"status\":\"ok\"}", "ctype": "application/json"},
+    "/swagger.json": {"status": 200, "body": "{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"Acme API\"}}", "ctype": "application/json"},
+    "/openapi.json": {"status": 200, "body": "{\"openapi\":\"3.0.0\"}", "ctype": "application/json"},
+    "/health": {"status": 200, "body": "{\"status\":\"healthy\"}", "ctype": "application/json"},
+    "/metrics": {"status": 200, "body": "# HELP http_requests_total", "ctype": "text/plain"},
+    "/.env": {"status": 200, "body": "API_SECRET=hunter2\nJWT_KEY=obliquity-lab", "ctype": "text/plain"}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "server": {"name": "Acme CMS (Joomla 4.3)", "header": "Apache/2.4.57", "powered_by": "PHP/8.1"},
+  "login_path": "/administrator/index.php",
+  "fail_marker": "Username and password do not match",
+  "creds": [["admin", "password123"], ["manager", "letmein"]],
+  "params": ["option", "view", "id", "Itemid", "task", "layout", "tmpl"],
+  "paths": {
+    "/administrator/": {"status": 200, "body": "Joomla! Administrator Login"},
+    "/administrator/index.php": {"status": 200, "body": "Joomla! Administrator Login"},
+    "/components/": {"status": 200, "body": "index of /components"},
+    "/modules/": {"status": 200, "body": "index of /modules"},
+    "/templates/": {"status": 200, "body": "index of /templates"},
+    "/configuration.php.bak": {"status": 200, "body": "public $password = 'hunter2';", "ctype": "text/plain"},
+    "/README.txt": {"status": 200, "body": "Joomla! 4.3"},
+    "/htaccess.txt": {"status": 200, "body": "# Joomla .htaccess", "ctype": "text/plain"}
+  }
+}

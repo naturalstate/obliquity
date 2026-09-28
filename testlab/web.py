@@ -91,6 +91,7 @@ class LabState:
         self.sessions: set[str] = set()
         self.verbose = False
         self.access_log_path: str | None = None
+        self.reports_url = "http://127.0.0.1:8787/"  # obliquity report serve
         self._lock = threading.Lock()
 
     def write_access_log(self, line: str) -> None:
@@ -140,6 +141,18 @@ def page(title: str, body: str) -> str:
 </div></body></html>"""
 
 
+class QuietHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Ignore the connection-reset/broken-pipe noise scanners produce.
+        import sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "obliquity-testlab/2.0"
 
@@ -166,18 +179,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, code: int, body: str, ctype: str = "text/html", cookie: str | None = None) -> None:
         data = body.encode("utf-8", "replace")
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Server", STATE.server.get("header", "Obliquity-Lab"))
-        if STATE.server.get("powered_by"):
-            self.send_header("X-Powered-By", STATE.server["powered_by"])
-        if cookie:
-            self.send_header("Set-Cookie", cookie)
-        self.end_headers()
         self._record(code, len(data))
-        if self.command != "HEAD":
-            self.wfile.write(data)
+        # Scanners hammer with concurrent requests and close connections early,
+        # so writes routinely hit a closed socket -- that's normal, not an error.
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Server", STATE.server.get("header", "Obliquity-Lab"))
+            if STATE.server.get("powered_by"):
+                self.send_header("X-Powered-By", STATE.server["powered_by"])
+            if cookie:
+                self.send_header("Set-Cookie", cookie)
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
 
     def _authed(self) -> bool:
         raw = self.headers.get("Cookie")
@@ -262,11 +280,18 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_hex(16)
             STATE.sessions.add(token)
             self._send(200, page("Welcome",
-                f"<h1 class=ok>&#10003; Authenticated</h1>"
-                f"<div class=card><p>Welcome back, <code>{html.escape(user)}</code>. "
-                "<code>brute</code> just recovered these credentials.</p>"
-                "<p><a href=/admin>&rarr; Open the admin center</a> (live logs + edit the site)</p></div>"
-                "<p><a href='" + html.escape(STATE.login_path) + "'>Sign out</a></p>",
+                f"<h1 class=ok>&#10003; Authenticated as {html.escape(user)}</h1>"
+                "<div class=card>"
+                f"<p>You signed in with valid credentials (<code>{html.escape(user)}</code> / "
+                f"<code>{html.escape(pw)}</code>). In a real engagement, a weak login like this is "
+                "exactly what Obliquity's <code>brute</code> pillar recovers.</p>"
+                "<div class=grid>"
+                "<a class=pill href=/admin>&rarr; Admin center</a> "
+                f"<a class=pill href='{html.escape(STATE.reports_url)}' target=_blank>&rarr; Obliquity reports</a> "
+                f"<a class=pill href='{html.escape(STATE.login_path)}'>sign out</a></div>"
+                f"<p class=muted style='margin-top:12px'>Reports open the report browser at "
+                f"<code>{html.escape(STATE.reports_url)}</code> -- start it with "
+                "<code>obliquity report serve</code> first.</p></div>",
             ), cookie=f"labsession={token}; Path=/")
         else:
             self._send(200, page("Sign in",
@@ -342,7 +367,12 @@ class Handler(BaseHTTPRequestHandler):
         note = f"<div class=card><p class=ok>{html.escape(banner)}</p></div>" if banner else ""
         paths = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.paths)[:40])
         params = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.params))
-        body = f"""<h1>Admin center</h1><p class=muted>Live request log + edit the site while a scan runs.</p>{note}
+        body = f"""<h1>Admin center</h1><p class=muted>Live request log + edit the site while a scan runs.</p>
+<div class=grid style="margin:6px 0 4px">
+<a class=pill href="{html.escape(STATE.reports_url)}" target=_blank>&rarr; Obliquity reports</a>
+<a class=pill href="/admin/log">&rarr; full detailed log</a>
+<a class=pill href="{html.escape(STATE.login_path)}">sign out</a></div>
+<p class=muted style="font-size:12px">Reports open <code>{html.escape(STATE.reports_url)}</code> -- run <code>obliquity report serve</code> first.</p>{note}
 <h2>Live request log &nbsp;<a href="/admin/log" style="font-size:13px">view full detailed log &rarr;</a></h2>
 <div class=card><table><thead><tr><th>time</th><th>client</th><th>method</th><th>path</th><th>status</th></tr></thead>
 <tbody id=log><tr><td colspan=5 class=muted>waiting for requests...</td></tr></tbody></table>
@@ -409,12 +439,15 @@ def main() -> None:
     ap.add_argument("--config", help="load a server profile JSON (see testlab/profiles/)")
     ap.add_argument("--verbose", action="store_true", help="also print each request to stdout")
     ap.add_argument("--access-log", dest="access_log", help="also write an Apache-style access log to this file")
+    ap.add_argument("--reports-url", dest="reports_url", help="URL the 'reports' links point to (default: http://127.0.0.1:8787/, i.e. 'obliquity report serve')")
     args = ap.parse_args()
     STATE.verbose = args.verbose
     STATE.access_log_path = args.access_log
+    if args.reports_url:
+        STATE.reports_url = args.reports_url
     if args.config:
         STATE.load_config(args.config)
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    srv = QuietHTTPServer((args.host, args.port), Handler)
     wild = "  [WILDCARD/soft-404 mode]" if os.environ.get("OBLIQUITY_LAB_WILDCARD") else ""
     print("\n".join(BANNER.splitlines()))
     print(f"\n{STATE.server['name']} -> http://{args.host}:{args.port}{wild}")

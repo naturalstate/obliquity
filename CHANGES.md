@@ -982,6 +982,25 @@ matches (documented by a new test).
   2,000) and `/admin/log` shows them all in a taller scrollable list with a
   live count, so a real scan actually fills it.
 
+### 44. Lab: report links, sample profiles, clearer login, no broken-pipe spam (2026-09-26)
+
+- **Reports links in the lab**: the post-login page and the admin center now
+  link to the report browser (`--reports-url`, default `http://127.0.0.1:8787/`
+  = `obliquity report serve`), plus a link to the full detailed log.
+- **Clearer login success**: replaced the confusing "brute just recovered these
+  credentials" (which showed nothing) with "Authenticated as <user>" and the
+  actual `user/pass` used, explaining that a weak login like this is what
+  `brute` recovers.
+- **More sample profiles** to import: `joomla.json`, `drupal.json`,
+  `iis-aspnet.json`, `api.json` (joining `wordpress.json`) -- each with a
+  realistic login path, params, and dirs/files.
+- **Silenced BrokenPipeError spam**: scanners close connections early, so writes
+  hit dead sockets -- normal, not an error. `_send` swallows Broken/Reset/Abort
+  and a QuietHTTPServer ignores them in handle_error. Verified: 100 concurrent
+  requests -> 0 tracebacks.
+- (`--port` for the web target already existed; documented alongside the new
+  flags.)
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold

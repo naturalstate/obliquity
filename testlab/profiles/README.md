@@ -23,4 +23,15 @@ Load one to make the web target mimic a specific server / CMS:
 ```
 
 Everything merges onto the defaults, so a profile only needs the parts it changes.
-Add your own to replicate a client's stack (Joomla, Drupal, IIS/ASP.NET, an API, ...).
+
+## Shipped profiles
+
+| Profile | Mimics | Login path |
+|---|---|---|
+| `wordpress.json` | WordPress 6.4 | `/wp-login.php` |
+| `joomla.json` | Joomla 4.3 | `/administrator/index.php` |
+| `drupal.json` | Drupal 10 | `/user/login` |
+| `iis-aspnet.json` | IIS / ASP.NET | `/login.aspx` |
+| `api.json` | JSON API gateway | `/api/v1/auth/login` |
+
+Add your own to replicate a client's exact stack.

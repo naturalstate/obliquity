@@ -1,0 +1,17 @@
+{
+  "server": {"name": "Acme Portal (Drupal 10)", "header": "Apache/2.4.57", "powered_by": "PHP/8.2", "x_generator": "Drupal 10"},
+  "login_path": "/user/login",
+  "fail_marker": "Unrecognized username or password",
+  "creds": [["admin", "password123"]],
+  "params": ["q", "destination", "page", "sort", "order", "uid", "nid"],
+  "paths": {
+    "/user/login": {"status": 200, "body": "Drupal log in"},
+    "/core/": {"status": 200, "body": "index of /core"},
+    "/sites/default/": {"status": 200, "body": "index of /sites/default"},
+    "/sites/default/settings.php.bak": {"status": 200, "body": "$databases['default']['default']['password'] = 'hunter2';", "ctype": "text/plain"},
+    "/modules/": {"status": 200, "body": "index of /modules"},
+    "/CHANGELOG.txt": {"status": 200, "body": "Drupal 10.1.6", "ctype": "text/plain"},
+    "/admin": {"status": 403, "body": "Access denied"},
+    "/robots.txt": {"status": 200, "body": "Disallow: /core/\nDisallow: /admin/", "ctype": "text/plain"}
+  }
+}

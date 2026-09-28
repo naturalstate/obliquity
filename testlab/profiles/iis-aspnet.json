@@ -1,0 +1,16 @@
+{
+  "server": {"name": "Acme Corp (IIS / ASP.NET)", "header": "Microsoft-IIS/10.0", "powered_by": "ASP.NET"},
+  "login_path": "/login.aspx",
+  "fail_marker": "Invalid username or password",
+  "creds": [["administrator", "password123"], ["svc_web", "letmein"]],
+  "params": ["__VIEWSTATE", "id", "page", "returnUrl", "aspxerrorpath", "lang"],
+  "paths": {
+    "/login.aspx": {"status": 200, "body": "<form runat=server> Sign In </form>"},
+    "/default.aspx": {"status": 200, "body": "ASP.NET default"},
+    "/admin.aspx": {"status": 302, "body": "redirect to login"},
+    "/web.config.bak": {"status": 200, "body": "<connectionStrings><add password='hunter2'/></connectionStrings>", "ctype": "text/plain"},
+    "/trace.axd": {"status": 200, "body": "Application Trace"},
+    "/elmah.axd": {"status": 200, "body": "Error Log for this application"},
+    "/.svn/entries": {"status": 200, "body": "10", "ctype": "text/plain"}
+  }
+}
