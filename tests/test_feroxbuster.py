@@ -52,6 +52,24 @@ class BuildCommandTests(TestCase):
         command = build_command("https://example.com", stage, Path("r.json"))
         self.assertIn("--collect-extensions", command)
 
+    def test_extract_links_on_by_default_emits_no_flag(self) -> None:
+        command = build_command("https://example.com", Stage(name="t", wordlist="w.txt"), Path("r.json"))
+        self.assertNotIn("--dont-extract-links", command)
+
+    def test_disabling_extract_links_emits_dont_flag(self) -> None:
+        stage = Stage(name="t", wordlist="w.txt", extract_links=False)
+        command = build_command("https://example.com", stage, Path("r.json"))
+        self.assertIn("--dont-extract-links", command)
+
+    def test_extract_links_changes_fingerprint(self) -> None:
+        from obliquity.core.gameplan import Gameplan, fingerprint_stage
+        base = Stage(name="t", wordlist="w.txt")
+        no_links = Stage(name="t", wordlist="w.txt", extract_links=False)
+        gp = Gameplan(name="g", description="", stages=[base])
+        fp1 = fingerprint_stage("https://x", gp, base, project_id=1)
+        fp2 = fingerprint_stage("https://x", gp, no_links, project_id=1)
+        self.assertNotEqual(fp1, fp2)
+
     def test_response_filters_emitted(self) -> None:
         stage = Stage(
             name="t", wordlist="w.txt",

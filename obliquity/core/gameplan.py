@@ -19,6 +19,10 @@ class Stage:
     depth: int | None = None
     status_codes: list[int] = field(default_factory=lambda: [200, 204, 301, 302, 307, 308, 401, 403])
     collect_extensions: bool = False
+    # feroxbuster extracts links from response bodies (html/js/...) and requests
+    # them -- a real discovery multiplier, ON by default. Set False to emit
+    # --dont-extract-links (faster / quieter).
+    extract_links: bool = True
     # Response filters (feroxbuster -C/-S/-W/-N/-X): drop noisy responses by
     # status code, byte size, word count, line count, or a regex on the body.
     filter_status: list[int] = field(default_factory=list)
@@ -72,6 +76,7 @@ def fingerprint_stage(url: str, gameplan: Gameplan, stage: Stage, *, project_id:
         "recursion": stage.recursion,
         "depth": stage.depth,
         "collect_extensions": stage.collect_extensions,
+        "extract_links": stage.extract_links,
         "status_codes": sorted(stage.status_codes),
         "filter_status": sorted(stage.filter_status),
         "filter_size": sorted(stage.filter_size),

@@ -51,6 +51,11 @@ def build_command(
     if stage.collect_extensions:
         cmd += ["--collect-extensions"]
 
+    # Link extraction (parse response bodies for URLs and request them) is ON by
+    # default in feroxbuster -- only emit a flag to turn it OFF.
+    if not stage.extract_links:
+        cmd += ["--dont-extract-links"]
+
     if stage.recursion:
         if stage.depth is not None:
             cmd += ["--depth", str(stage.depth)]

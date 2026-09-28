@@ -495,6 +495,23 @@ Tune or disable it with `--flood-threshold N` (default 250; the re-run is a
 distinct, fingerprinted run) or `--no-flood-guard`. In non-interactive runs it
 auto-re-runs filtered and says so.
 
+**Link extraction (discovery multiplier)**: feroxbuster parses every response
+body (HTML, JavaScript, `robots.txt`, ...) for URLs and folds the ones it finds
+back into the scan. This reaches paths that live in *no* wordlist -- an admin
+console linked only from a `<script>`, a legacy API referenced in a bundled
+`.js`, a report linked from the homepage. It is **on by default**; disable it
+per run when you want a pure wordlist scan (faster, quieter, fewer requests):
+
+```bash
+obliquity bust run acme --no-extract-links
+```
+
+Toggling it fingerprints as a distinct run. The test lab has a built-in demo:
+its homepage and `/assets/app.js` link to deliberately obscure paths
+(`/reports/q4-internal-8kd.html`, `/dev-x9f2-console/`, ...) that only turn up
+when extraction is on -- run a default scan against it, then `--no-extract-links`,
+and compare.
+
 **Extension Intelligence**: appending extensions to a wordlist that *already*
 contains them (`index.php` + `.php` -> `index.php.php`) just wastes requests.
 Obliquity detects it and warns during `bust plan`/`run`. Inspect any wordlist

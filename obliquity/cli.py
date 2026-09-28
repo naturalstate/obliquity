@@ -1606,6 +1606,9 @@ def apply_bust_recursion_overrides(gameplan, args) -> None:
     if getattr(args, "filter_regex", None):
         for stage in gameplan.stages:
             stage.filter_regex = args.filter_regex
+    if getattr(args, "no_extract_links", False):
+        for stage in gameplan.stages:
+            stage.extract_links = False
 
 
 def cmd_bust_plan(args) -> None:
@@ -2626,6 +2629,8 @@ for detailed options and examples. Only test systems you are authorized to asses
     bust_scan_args.add_argument("--flood-threshold", type=int, default=250, metavar="N",
                                 help="abort a stage mid-run if one status code floods past N matches (wildcard/soft-404) and offer to re-run filtered (default: 250)")
     bust_scan_args.add_argument("--no-flood-guard", action="store_true", help="disable mid-run flood detection")
+    bust_scan_args.add_argument("--no-extract-links", action="store_true",
+                                help="disable feroxbuster's link extraction (it parses response bodies for URLs and requests them; on by default) for every stage")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

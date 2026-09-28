@@ -89,6 +89,23 @@ class LabState:
             "/uploads/": {"status": 200, "body": "index of /uploads", "ctype": "text/plain"},
             "/old/": {"status": 200, "body": "old site", "ctype": "text/plain"},
             "/phpinfo.php": {"status": 200, "body": "phpinfo() OBLIQUITY-LAB", "ctype": "text/plain"},
+            # --- link-extraction demo -------------------------------------
+            # These paths have deliberately obscure names that appear in NO
+            # common wordlist, so a plain `bust` never guesses them. They are
+            # only reachable by parsing links out of response bodies -- exactly
+            # what feroxbuster's link extraction (on by default) does. The home
+            # page and /assets/app.js below point at them, so a default scan
+            # discovers them and `--no-extract-links` does not.
+            "/assets/app.js": {"status": 200, "ctype": "application/javascript",
+                "body": "// lab bootstrap\nfetch('/api/v7-legacy/tokens.json');\n"
+                        "const dash='/dev-x9f2-console/';\nimport('/static/z3-widgets/loader.mjs');\n"},
+            "/api/v7-legacy/tokens.json": {"status": 200, "ctype": "application/json",
+                "body": '{"token":"lab-legacy-9f2","note":"found via link extraction"}'},
+            "/dev-x9f2-console/": {"status": 200, "body": "internal dev console (link-extraction only)"},
+            "/static/z3-widgets/loader.mjs": {"status": 200, "ctype": "application/javascript",
+                "body": "export const build='z3';  // reached via JS import link"},
+            "/reports/q4-internal-8kd.html": {"status": 200, "ctype": "text/html",
+                "body": "<h1>Q4 internal (link-extraction only)</h1>"},
         }
         self.log: deque = deque(maxlen=50000)
         self.verbose = False
@@ -308,7 +325,15 @@ class ContentHandler(_Base):
             "<span class=pill>fuzz &rarr; /search params</span>"
             "<span class=pill>brute &rarr; login form</span>"
             "<span class=pill>crack &rarr; hash fixtures</span></div></div>"
-            f"<p><a href='{html.escape(STATE.login_path)}'>&rarr; Sign in</a></p>")
+            f"<p><a href='{html.escape(STATE.login_path)}'>&rarr; Sign in</a></p>"
+            # Link-extraction demo: these obscure paths are in no wordlist, so a
+            # plain bust misses them -- feroxbuster only reaches them by parsing
+            # links out of this page's body (and the JS it loads). Run a default
+            # scan vs. `--no-extract-links` to see the difference.
+            "<script src='/assets/app.js'></script>"
+            "<p style='display:none'>"
+            "<a href='/reports/q4-internal-8kd.html'>q4</a> "
+            "<a href='/dev-x9f2-console/'>console</a></p>")
 
     def _search(self, params: dict) -> str:
         hit = sorted(STATE.params.intersection(params.keys()))
