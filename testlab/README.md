@@ -45,14 +45,30 @@ cd testlab && docker compose up -d && cd ..
 
 ---
 
-## Admin center & watching scans live
+## Two servers: content vs. control plane
 
-Sign in to the web target (default `admin` / `password123`) and open
-**`/admin`** — a branded dashboard that:
+`python3 -m testlab.web` starts **two servers in one process** so the control
+plane never pollutes your attack surface:
+
+- **Content server** — `http://127.0.0.1:8000` (`--port`): the site you scan
+  (dirs/files, `/search`, the login form). Every request is logged. It serves
+  **no `/admin`**, so a scan never "finds" the console.
+- **Admin console** — `http://127.0.0.1:8001` (`--admin-port`): your operator
+  panel — live log of the *content* server, edit paths/params, import profiles,
+  links to reports. Its own requests are **never logged**, and it's on a
+  separate port so it never appears in a scan of the content site.
+
+The report browser (`obliquity report serve`, port 8787) is a separate process
+too, so all three planes stay independent.
+
+## Admin console & watching scans live
+
+Open **`http://127.0.0.1:8001/`** (no login needed — it's your localhost
+console) — a branded dashboard that:
 
 - shows a **live request log** (auto-refreshing) so you can *watch a scan hit
   paths in real time* while `obliquity bust run` is going -- with a **full
-  detailed log** page (`/admin/log`: client IP, bytes, user-agent) that holds up
+  detailed log** page (`:8001/log`: client, method, path, status) that holds up
   to 50,000 entries in a scrollable list, so a big scan really fills it;
 - lets you **add paths** (dirs/files) and **parameters** at runtime — add
   `/secret/` and watch the next bust find it, or add a param and watch fuzz find it;
@@ -61,7 +77,7 @@ Sign in to the web target (default `admin` / `password123`) and open
 ### Situation toggles (`OBLIQUITY_LAB_*`)
 
 Env vars that make the target misbehave like a real server, to exercise
-Obliquity's handling. Each affects **content** paths only -- `/admin` and login
+Obliquity's handling. Each affects **content** paths only -- the admin console (:8001) and login
 stay usable so you can watch. Combine them freely.
 
 | Env var | Effect | Tests |
@@ -79,7 +95,7 @@ OBLIQUITY_LAB_FLAKY=20 OBLIQUITY_LAB_SLOW=0.2 python3 -m testlab.web
 
 ### Loading a config: three ways
 
-In the **admin center** (`/admin`) you can now: pick a **shipped profile** from
+In the **admin console** (`:8001`) you can now: pick a **shipped profile** from
 a dropdown and click *Load profile*; **choose a `.json` file** from your computer
 (it loads into the textbox); or **paste JSON** directly. Shipped profiles live in
 [`testlab/profiles/`](profiles/) (`wordpress.json`, `joomla.json`, `drupal.json`,
@@ -136,7 +152,7 @@ obliquity bust run --gameplan generic-standard    # bigger pass
 obliquity bust run --gameplan generic-quick --filter-status 404   # noise control
 obliquity bust resume --gameplan generic-standard # skip completed stages
 # flood guard: OBLIQUITY_LAB_WILDCARD=1 makes EVERY content path return 200
-# (a "wildcard"/soft-404 host). /admin and /login still work so you can watch it.
+# (a "wildcard"/soft-404 host). The admin console (:8001) is unaffected.
 # restart the web target with  OBLIQUITY_LAB_WILDCARD=1  then:
 obliquity bust run --gameplan generic-quick       # every path 200 -> detects flood, offers re-run
 

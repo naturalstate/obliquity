@@ -1026,6 +1026,25 @@ matches (documented by a new test).
 - Documented where the profiles live (`testlab/profiles/`) and that the
   `OBLIQUITY_LAB_WILDCARD` command is in the lab guide.
 
+### 47. Lab: split content vs. admin into two servers; fix detailed log (2026-09-26)
+
+- **Separation of planes** (your call): `testlab.web` now runs **two servers in
+  one process** -- the **content server** (`--port` 8000, the site you scan;
+  every request logged; serves NO `/admin`) and the **admin console**
+  (`--admin-port` 8001; live log + editing + profile import; its own requests
+  are never logged). So busting the content site never "finds" the admin panel,
+  and admin/report visits never skew the request log. (The report browser on
+  8787 is already a separate process.)
+- **Dashboard live log** now shows just the latest 40 (a sample); the full
+  history lives on the detailed page.
+- **Fixed the detailed log page**: it was tall/mangled (long user-agent column
+  wrapped, columns overflowed). Rebuilt to match the dashboard exactly -- clean
+  5-column rows (time / client / method / path / status), live, scrollable,
+  status color-coded.
+- Admin console needs no login now (it's your localhost operator console on a
+  separate port); the content login stays purely a brute target, and its
+  success page links to the console + reports.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
