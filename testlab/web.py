@@ -24,6 +24,7 @@ import secrets
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlparse
@@ -93,6 +94,18 @@ class LabState:
         self.access_log_path: str | None = None
         self.reports_url = "http://127.0.0.1:8787/"  # obliquity report serve
         self._lock = threading.Lock()
+        self._rl_sec = 0
+        self._rl_count = 0
+
+    def rate_hit(self, limit: int) -> bool:
+        """True if this second's request count exceeds `limit` (crude rate limit)."""
+        now = int(time.time())
+        with self._lock:
+            if now != self._rl_sec:
+                self._rl_sec = now
+                self._rl_count = 0
+            self._rl_count += 1
+            return self._rl_count > limit
 
     def write_access_log(self, line: str) -> None:
         if not self.access_log_path:
@@ -129,6 +142,15 @@ class LabState:
 
 
 STATE = LabState()
+
+
+def _profiles_dir() -> Path:
+    return Path(__file__).resolve().parent / "profiles"
+
+
+def _profile_names() -> list[str]:
+    d = _profiles_dir()
+    return sorted(p.stem for p in d.glob("*.json")) if d.exists() else []
 
 
 def page(title: str, body: str) -> str:
@@ -210,17 +232,52 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0) or 0)
         return parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
 
+    def _is_control(self, path: str) -> bool:
+        return path.startswith("/admin") or path == STATE.login_path
+
+    def _degrade(self, path: str):
+        """Apply the OBLIQUITY_LAB_* situation toggles to a content request.
+        Returns (code, body) to short-circuit, or None to proceed normally.
+        Control paths (/admin*, login) are never degraded so the panel stays up."""
+        if self._is_control(path):
+            return None
+        slow = os.environ.get("OBLIQUITY_LAB_SLOW")
+        if slow:
+            try:
+                time.sleep(float(slow))
+            except ValueError:
+                pass
+        rl = os.environ.get("OBLIQUITY_LAB_RATELIMIT")
+        if rl:
+            try:
+                if STATE.rate_hit(int(rl)):
+                    return (429, "429 Too Many Requests -- rate limited (OBLIQUITY_LAB_RATELIMIT)")
+            except ValueError:
+                pass
+        flaky = os.environ.get("OBLIQUITY_LAB_FLAKY")
+        if flaky:
+            try:
+                import random
+                if random.random() * 100 < float(flaky):
+                    return (500, "500 Internal Server Error (OBLIQUITY_LAB_FLAKY)")
+            except ValueError:
+                pass
+        return None
+
     # --- GET --------------------------------------------------------------
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
 
+        degraded = self._degrade(path)
+        if degraded is not None:
+            self._send(degraded[0], degraded[1], "text/plain")
+            return
+
         # Wildcard / soft-404 mode: every *content* path returns 200 (to test the
         # flood guard) -- but keep the admin center and login usable so you can
         # still watch the flood happen.
-        if os.environ.get("OBLIQUITY_LAB_WILDCARD") and not (
-            path.startswith("/admin") or path == STATE.login_path
-        ):
+        if os.environ.get("OBLIQUITY_LAB_WILDCARD") and not self._is_control(path):
             self._send(200, f"wildcard 200 for {path}")
             return
 
@@ -330,6 +387,17 @@ class Handler(BaseHTTPRequestHandler):
                 msg = "config imported."
             except Exception as exc:  # noqa: BLE001
                 msg = f"import failed: {exc}"
+        elif path == "/admin/load-profile":
+            name = (form.get("name") or [""])[0].strip()
+            f = _profiles_dir() / (name + ".json")
+            if name and f.exists():
+                try:
+                    STATE.load_config(str(f))
+                    msg = f"loaded profile '{name}' ({STATE.server['name']})"
+                except Exception as exc:  # noqa: BLE001
+                    msg = f"load failed: {exc}"
+            else:
+                msg = f"unknown profile: {name}"
         elif path == "/admin/clear-logs":
             STATE.log.clear()
             msg = "logs cleared."
@@ -374,6 +442,8 @@ class Handler(BaseHTTPRequestHandler):
         note = f"<div class=card><p class=ok>{html.escape(banner)}</p></div>" if banner else ""
         paths = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.paths)[:40])
         params = "".join(f"<span class=pill>{html.escape(p)}</span>" for p in sorted(STATE.params))
+        profile_options = "<option value=''>-- pick --</option>" + "".join(
+            f"<option value='{html.escape(n)}'>{html.escape(n)}</option>" for n in _profile_names())
         body = f"""<h1>Admin center</h1><p class=muted>Live request log + edit the site while a scan runs.</p>
 <div class=grid style="margin:6px 0 4px">
 <a class=pill href="{html.escape(STATE.reports_url)}" target=_blank>&rarr; Obliquity reports</a>
@@ -397,10 +467,21 @@ class Handler(BaseHTTPRequestHandler):
 <label>Name (fuzz finds it at /search?NAME=...)</label><input name=name placeholder="token">
 <button>Add param</button></form>
 <h2 style="margin-top:22px">Import a config profile</h2>
+<form method=post action=/admin/load-profile style="margin-bottom:10px">
+<label>Load a shipped profile</label>
+<select name=name>{profile_options}</select>
+<button>Load profile</button></form>
 <form method=post action=/admin/import>
-<label>Paste JSON (see testlab/profiles/)</label><textarea name=config rows=5 placeholder='{{"paths":{{"/wp-admin/":{{"status":302}}}},"params":["s","p"]}}'></textarea>
+<label>...or choose a .json file from your computer</label>
+<input type=file accept=".json,application/json" id=cfgfile>
+<label style="margin-top:8px">...or paste JSON (the file loads into here too)</label>
+<textarea name=config id=config rows=5 placeholder='{{"paths":{{"/wp-admin/":{{"status":302}}}},"params":["s","p"]}}'></textarea>
 <button>Import config</button></form></div>
 </div>
+<script>
+const _cf=document.getElementById('cfgfile');
+if(_cf)_cf.onchange=e=>{{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{{document.getElementById('config').value=r.result;}};r.readAsText(f);}};
+</script>
 <h2>Current paths ({len(STATE.paths)})</h2><div class=card><div class=grid>{paths}</div></div>
 <h2>Current params ({len(STATE.params)})</h2><div class=card><div class=grid>{params}</div></div>
 <script>

@@ -58,6 +58,33 @@ Sign in to the web target (default `admin` / `password123`) and open
   `/secret/` and watch the next bust find it, or add a param and watch fuzz find it;
 - lets you **import a config profile** (paste JSON) to reshape the site on the fly.
 
+### Situation toggles (`OBLIQUITY_LAB_*`)
+
+Env vars that make the target misbehave like a real server, to exercise
+Obliquity's handling. Each affects **content** paths only -- `/admin` and login
+stay usable so you can watch. Combine them freely.
+
+| Env var | Effect | Tests |
+|---|---|---|
+| `OBLIQUITY_LAB_WILDCARD=1` | every content path returns `200` (wildcard/soft-404) | the flood guard |
+| `OBLIQUITY_LAB_RATELIMIT=<n>` | over `n` requests/second → `429` | rate-limit / back-off behavior |
+| `OBLIQUITY_LAB_FLAKY=<pct>` | `pct`% of requests randomly return `500` | error handling / retries |
+| `OBLIQUITY_LAB_SLOW=<seconds>` | delay every response by that many seconds | timeouts / slow targets |
+
+```bash
+OBLIQUITY_LAB_WILDCARD=1 python3 -m testlab.web
+OBLIQUITY_LAB_RATELIMIT=50 python3 -m testlab.web
+OBLIQUITY_LAB_FLAKY=20 OBLIQUITY_LAB_SLOW=0.2 python3 -m testlab.web
+```
+
+### Loading a config: three ways
+
+In the **admin center** (`/admin`) you can now: pick a **shipped profile** from
+a dropdown and click *Load profile*; **choose a `.json` file** from your computer
+(it loads into the textbox); or **paste JSON** directly. Shipped profiles live in
+[`testlab/profiles/`](profiles/) (`wordpress.json`, `joomla.json`, `drupal.json`,
+`iis-aspnet.json`, `api.json`).
+
 Mimic a real stack from the start with `--config`:
 
 ```bash

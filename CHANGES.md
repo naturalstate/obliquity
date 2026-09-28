@@ -1013,6 +1013,19 @@ matches (documented by a new test).
   (in addition to the `--reports-url` flag), so a single file can carry both the
   mimicked site and where the report links point.
 
+### 46. Lab situation toggles + easier config loading (2026-09-26)
+
+- **New `OBLIQUITY_LAB_*` toggles** (content paths only; admin/login stay up):
+  `RATELIMIT=<n>` (429 over n req/s), `FLAKY=<pct>` (random 500s),
+  `SLOW=<seconds>` (per-response delay) -- joining `WILDCARD=1`. Lets the target
+  mimic rate-limiting, a flaky server, or a slow host to exercise Obliquity's
+  handling.
+- **Easier config import** in the admin center: a dropdown of shipped profiles
+  with a Load button (`/admin/load-profile`), a **file picker** that reads a
+  chosen `.json` into the import box (client-side), plus the existing paste box.
+- Documented where the profiles live (`testlab/profiles/`) and that the
+  `OBLIQUITY_LAB_WILDCARD` command is in the lab guide.
+
 ### Explicitly parked, not forgotten
 
 - **B (multi-host + sequential scanning + friendly host names)** -- on hold
