@@ -233,10 +233,12 @@ with the existing `--gameplan` / `set bust gameplan`.
 
 ## 10. Implementation plan (milestones, each independently revertible)
 
-1. **Target expansion** — parse `-iL`/`--targets`/positional into a normalized,
-   de-duplicated target list; register hosts; build the (target × stage) matrix;
-   target-major/in-order only. Wire into `run_gameplan` and dry-run. *(Delivers
-   multi-host and multi-directory immediately.)*
+1. **Target expansion** — DONE. `obliquity/core/targets.py` normalizes/dedupes
+   `-iL`/`--targets`/positional; `expand_bust_targets` registers hosts (one line
+   count) and builds the target list; `run_gameplan(base_url=...)` + `stage_paths`
+   key on the scan base URL so directories on one host don't collide;
+   `cmd_bust_run` loops target-major/in-order. Delivers multi-host and
+   multi-directory. Back-compat: single positional URL is one cell, unchanged.
 2. **Schedule** — add `--order` (in-order/reverse/random+seed) and `--nesting`
    (target-major/wordlist-major); stored-options support.
 3. **UX polish** — matrix-aware dry-run listing, target counter in the progress

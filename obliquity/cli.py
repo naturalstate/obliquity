@@ -82,6 +82,7 @@ from obliquity.adapters.hydra import (
     service_default_port,
 )
 from obliquity.core.gameplan import extension_conflicts, find_builtin_gameplan, fingerprint_stage, list_builtin_gameplans, load_gameplan
+from obliquity.core.targets import parse_targets, read_target_file, split_inline_targets
 from obliquity.core.ffuf_runner import run_fuzz_plan
 from obliquity.core.fuzzplan import find_fuzz_plan, list_fuzz_plans, load_fuzz_plan
 from obliquity.core.reporting import generate_csv, generate_html, generate_json, generate_markdown
@@ -290,6 +291,46 @@ def require_host(conn, project: dict, url: str | None):
         print(c(f"Using first host: {hosts[0]['url']}  (project has {len(hosts)}; "
                 f"pass a URL or 'set host <url>' to choose another)", "gray"))
     return hosts[0]
+
+
+def expand_bust_targets(conn, project, args) -> list[tuple[dict, str | None]]:
+    """Resolve the bust target list from -iL / --targets / a positional URL into
+    ``[(host_row, base_url)]`` in execution order (target-major). Each distinct
+    host (scheme+netloc) is registered once; the base URL (incl. path) is the
+    scan base. With no targets given, falls back to the project's host (unchanged
+    single-target behavior), returned as ``[(host, None)]``."""
+    raw: list[str] = []
+    targets_file = getattr(args, "targets_file", None)
+    if targets_file:
+        try:
+            raw += read_target_file(Path(targets_file).read_text(encoding="utf-8"))
+        except OSError as exc:
+            die(f"could not read targets file: {exc}")
+    inline = getattr(args, "targets", None)
+    if inline:
+        raw += split_inline_targets(inline)
+    if getattr(args, "url", None):
+        raw.append(args.url)
+
+    if not raw:
+        return [(require_host(conn, project, None), None)]
+
+    try:
+        specs = parse_targets(raw)
+    except ValueError as exc:
+        die(f"invalid target: {exc}")
+
+    resolved: list[tuple[dict, str | None]] = []
+    added = 0
+    for host_key, base_url in specs:
+        host = get_host(conn, project["id"], host_key)
+        if host is None:
+            host = add_host(conn, project["id"], host_key)
+            added += 1
+        resolved.append((host, base_url))
+    if added:
+        print(c(f"Added {added} host{'' if added == 1 else 's'} to project", "gray"))
+    return resolved
 
 
 def require_job(conn, project: dict, target: str | None):
@@ -1649,35 +1690,48 @@ def cmd_bust_run(args) -> None:
     normalize_host_target(args)
     project = resolve_project(conn, args)
     apply_stored_options(conn, project, "bust", args)
-    host = require_host(conn, project, args.url)
-    gameplan, reason = resolve_bust_gameplan_choice(project, host, args)
+
+    # Target-major matrix: run the whole gameplan against each target in turn.
+    # With a single target this is exactly the previous single-host behavior.
+    targets = expand_bust_targets(conn, project, args)
+    first_host = targets[0][0]
+    gameplan, reason = resolve_bust_gameplan_choice(project, first_host, args)
     apply_bust_recursion_overrides(gameplan, args)
     original_name = gameplan.name
-    gameplan = maybe_warn_and_escalate_bust(conn, project, host, gameplan, args)
+    gameplan = maybe_warn_and_escalate_bust(conn, project, first_host, gameplan, args)
     if gameplan.name != original_name:
         reason = None
 
     mode = "Dry Run" if args.dry_run else "Resume" if getattr(args, "resume", False) else "Run"
-    print_gameplan_summary(project, host, gameplan, mode=mode, args=args, recommended_reason=reason)
+    print_gameplan_summary(project, first_host, gameplan, mode=mode, args=args, recommended_reason=reason)
+    if len(targets) > 1:
+        subsection(f"Targets ({len(targets)})", "cyan")
+        for i, (_h, base_url) in enumerate(targets, start=1):
+            bullet(f"{i}", base_url)
 
     section("Execution", "cyan")
     flood_threshold = 0 if getattr(args, "no_flood_guard", False) else getattr(args, "flood_threshold", 0)
-    results = run_gameplan(
-        conn,
-        project,
-        host,
-        gameplan,
-        force=args.force,
-        dry_run=args.dry_run,
-        rate_limit=args.rate_limit,
-        threads=args.threads,
-        proxy=args.proxy,
-        flood_threshold=flood_threshold,
-        flood_prompt=bust_flood_prompt,
-        headers=args.header or [],
-        event_callback=print_run_event,
-        ferox_ui=getattr(args, "ferox_ui", False),
-    )
+    results: list[dict] = []
+    for i, (host, base_url) in enumerate(targets, start=1):
+        if len(targets) > 1:
+            subsection(f"Target {i}/{len(targets)}: {base_url or host['url']}", "blue")
+        results += run_gameplan(
+            conn,
+            project,
+            host,
+            gameplan,
+            force=args.force,
+            dry_run=args.dry_run,
+            rate_limit=args.rate_limit,
+            threads=args.threads,
+            proxy=args.proxy,
+            flood_threshold=flood_threshold,
+            flood_prompt=bust_flood_prompt,
+            headers=args.header or [],
+            event_callback=print_run_event,
+            ferox_ui=getattr(args, "ferox_ui", False),
+            base_url=base_url,
+        )
 
     completed = sum(1 for item in results if item.get("status") == "completed")
     skipped = sum(1 for item in results if item.get("action") == "skipped")
@@ -2638,6 +2692,10 @@ for detailed options and examples. Only test systems you are authorized to asses
                                 help="disable feroxbuster's link extraction (it parses response bodies for URLs and requests them; on by default) for every stage")
     bust_scan_args.add_argument("--ferox-ui", dest="ferox_ui", action="store_true",
                                 help="show feroxbuster's own live UI (pinned results, progress bars, clickable URLs, and its Scan Management Menu via ENTER) during each stage, banner suppressed, instead of Obliquity's one-line progress")
+    bust_scan_args.add_argument("-iL", "--targets-file", dest="targets_file", metavar="PATH",
+                                help="scan multiple targets: a file of base URLs, one host[/path] per line (# comments and blank lines ignored). Same host may repeat with different paths.")
+    bust_scan_args.add_argument("--targets", dest="targets", metavar="\"a,b,c\"",
+                                help="scan multiple targets given inline, comma-separated (e.g. https://a.com/,https://a.com/admin/,https://b.com/)")
     bust_scan_args.add_argument("--report", action="store_true", help="generate the HTML report after a successful run")
     bust_scan_args.add_argument("--open-report", action="store_true", help="generate and open the HTML report after a successful run")
 

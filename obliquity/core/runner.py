@@ -115,8 +115,12 @@ def safe_name(value: str) -> str:
     return "".join(keep).strip("_") or "item"
 
 
-def stage_paths(project: Row, host: Row, gameplan: Gameplan, stage_name: str) -> tuple[Path, Path]:
-    base = Path(project["root_dir"]) / "runs" / safe_name(host["url"]) / safe_name(gameplan.name)
+def stage_paths(project: Row, host: Row, gameplan: Gameplan, stage_name: str,
+                url_override: str | None = None) -> tuple[Path, Path]:
+    # Key the output dir on the scan base URL when given (so two directories on
+    # one host don't collide), else on the host URL as before.
+    key = url_override or host["url"]
+    base = Path(project["root_dir"]) / "runs" / safe_name(key) / safe_name(gameplan.name)
     base.mkdir(parents=True, exist_ok=True)
     raw = base / f"{safe_name(stage_name)}.raw.txt"
     js = base / f"{safe_name(stage_name)}.jsonl"
@@ -166,11 +170,14 @@ def run_gameplan(
     flood_threshold: int = 0,
     flood_prompt: Callable[[dict], bool] | None = None,
     ferox_ui: bool = False,
+    base_url: str | None = None,
 ) -> list[dict]:
     if not dry_run:
         require_feroxbuster()
     results: list[dict] = []
-    url = host["url"]
+    # `base_url` (a target's host+path) overrides the plain host URL as the scan
+    # base; it flows into the command, the fingerprint, and the output paths.
+    url = base_url or host["url"]
     total_stages = len(gameplan.stages)
     # feroxbuster's native pinned UI needs to own a real terminal (stdin+stdout);
     # off a TTY (piped, tests, the REPL) we fall back to the parsed progress line.
@@ -194,7 +201,7 @@ def run_gameplan(
 
         # Dry-run: preview the command once, without executing.
         if dry_run:
-            raw_output, json_output = stage_paths(project, host, gameplan, stage.name)
+            raw_output, json_output = stage_paths(project, host, gameplan, stage.name, url_override=url)
             cmd = build_command(url, stage, json_output, rate_limit=rate_limit, threads=threads, proxy=proxy, headers=headers)
             item = {
                 "stage": stage.name, "stage_number": idx, "total_stages": total_stages,
@@ -214,7 +221,7 @@ def run_gameplan(
         item = None
         for attempt in range(1, 3):  # original + at most one filtered re-run
             fingerprint = fingerprint_stage(url, gameplan, stage, project_id=project["id"])
-            raw_output, json_output = stage_paths(project, host, gameplan, stage.name)
+            raw_output, json_output = stage_paths(project, host, gameplan, stage.name, url_override=url)
             cmd = build_command(url, stage, json_output, rate_limit=rate_limit, threads=threads, proxy=proxy, headers=headers)
             command = quoted_command(cmd)
             run = create_or_update_run(
